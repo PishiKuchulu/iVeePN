@@ -75,7 +75,7 @@ jobs:
           JAVA_EOF
           java -Djava.awt.headless=true /tmp/GenIcons.java
 
-            - name: Fetch Vazirmatn fonts (v33.003)
+      - name: Fetch Vazirmatn fonts (v33.003)
         run: |
           mkdir -p app/src/main/res/font
           cd app/src/main/res/font
