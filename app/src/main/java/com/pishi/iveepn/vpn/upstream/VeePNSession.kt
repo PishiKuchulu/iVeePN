@@ -2,6 +2,7 @@ package com.pishi.iveepn.vpn.upstream
 
 import com.pishi.iveepn.data.AppLogger
 import com.pishi.iveepn.data.VeePNApi
+import com.pishi.iveepn.data.model.VeePNServer
 import java.io.IOException
 import java.net.SocketTimeoutException
 
@@ -81,6 +82,9 @@ class VeePNSession(
     }
 
     /** Public exit IP through a fresh tunnel, or null when undetermined. */
+    /** Servers currently in rotation (empty before connect); used for the connected-endpoint ping. */
+    fun currentServers(): List<VeePNServer> = pool?.currentServers().orEmpty()
+
     suspend fun probeExitIp(): String? {
         val activePool = pool
         if (activePool == null || closed) return null
