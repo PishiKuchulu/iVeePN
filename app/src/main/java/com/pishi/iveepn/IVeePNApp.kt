@@ -46,7 +46,7 @@ class IVeePNApp : Application() {
         manager.createNotificationChannel(
             NotificationChannel(
                 VPN_NOTIFICATION_CHANNEL_ID,
-                "VPN status",
+                getString(R.string.notif_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )

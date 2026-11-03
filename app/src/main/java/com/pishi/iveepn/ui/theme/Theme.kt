@@ -4,22 +4,22 @@ import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.view.WindowCompat
 
-// Placeholder UI — original iVeePN design lands in P4.
-// Plain Material 3 default colour schemes and typography; no brand identity.
+/**
+ * iVeePN theme — design direction #2 "Modern Premium": brand-derived
+ * Material 3 schemes, Vazirmatn type scale and the shared shape/spacing
+ * system. Layout direction is NOT overridden here: it follows the active
+ * locale (the manifest declares supportsRtl), so Persian renders RTL and
+ * English LTR from the same screens.
+ */
 @Composable
 fun IVeePNTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -37,8 +37,8 @@ fun IVeePNTheme(
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> darkColorScheme()
-        else -> lightColorScheme()
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
     }
 
     val view = LocalView.current
@@ -54,11 +54,11 @@ fun IVeePNTheme(
 
     CompositionLocalProvider(
         LocalIVeePNStatusColors provides if (darkTheme) DarkStatusColors else LightStatusColors,
-        LocalLayoutDirection provides LayoutDirection.Ltr,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography(),
+            typography = IVeePNType,
+            shapes = IVeePNShapes,
             content = content,
         )
     }

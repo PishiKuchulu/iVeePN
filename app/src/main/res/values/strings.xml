@@ -1,8 +1,206 @@
 <resources>
     <string name="app_name">iVeePN</string>
+
+    <!-- Quick settings tile + widget -->
     <string name="quick_connect">Quick Connect</string>
     <string name="quick_connect_connected">Connected</string>
     <string name="quick_connect_connecting">Connecting\u2026</string>
     <string name="quick_connect_disconnected">Disconnected</string>
     <string name="quick_connect_widget_desc">iVeePN Quick Connect Widget</string>
+    <string name="widget_connected_country">Connected \u00B7 %1$s</string>
+    <string name="widget_button_cd">Quick connect \u2014 %1$s</string>
+
+    <!-- Common -->
+    <string name="common_back">Back</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_save">Save</string>
+    <string name="common_close">Close</string>
+    <string name="common_ok">OK</string>
+    <string name="common_retry">Retry</string>
+    <string name="common_clear">Clear</string>
+    <string name="cd_dismiss">Dismiss</string>
+
+    <!-- Connection status (shared) -->
+    <string name="status_connected">Connected</string>
+    <string name="status_connecting">Connecting\u2026</string>
+    <string name="status_disconnected">Disconnected</string>
+
+    <!-- Home -->
+    <string name="home_location_title">Location</string>
+    <string name="home_location_default">Default location (Netherlands)</string>
+    <string name="home_connect">Connect</string>
+    <string name="home_disconnect">Disconnect</string>
+    <string name="home_connecting_hint">Establishing a secure tunnel\u2026</string>
+    <string name="home_connecting_elapsed">Connecting for %1$s</string>
+    <string name="home_session_duration">Session duration: %1$s</string>
+    <string name="home_stat_traffic">Session traffic: %1$s</string>
+    <string name="home_speed_format">\u2193 %1$s/s \u00B7 \u2191 %2$s/s</string>
+    <string name="home_ping_format">Ping: %1$d ms</string>
+    <string name="home_exit_ip_format">Exit IP: %1$s (%2$s)</string>
+    <string name="home_your_ip_format">Your IP: %1$s</string>
+    <string name="home_nav_locations">Locations</string>
+    <string name="home_nav_settings">Settings</string>
+    <string name="home_nav_logs">Logs</string>
+    <string name="home_proxy_only_title">Proxy-only mode</string>
+    <string name="home_proxy_only_message">Apps must use the local proxy (%1$s:%2$d). Other traffic is NOT protected by the tunnel.</string>
+    <string name="home_lan_title">Exposed on your local network</string>
+    <string name="home_lan_message">The local proxy listens on %1$s, so other devices on this network can reach it. Change the bind address in Settings if this is not intended.</string>
+    <string name="home_error_title">Connection problem</string>
+    <string name="home_error_view_logs">View logs</string>
+    <string name="update_banner_text">Version %1$s is available</string>
+    <string name="update_banner_action">View</string>
+
+    <!-- Locations -->
+    <string name="locations_title">Locations</string>
+    <string name="locations_search_label">Search locations</string>
+    <string name="locations_tab_free">Free (%1$d)</string>
+    <string name="locations_tab_all">All (%1$d)</string>
+    <string name="locations_loading">Loading locations\u2026</string>
+    <string name="locations_error_title">Couldn\'t load locations</string>
+    <string name="locations_empty_title">No locations available</string>
+    <string name="locations_empty_message">The location list came back empty. Check your connection and try again.</string>
+    <string name="locations_search_empty_title">No results for \u201C%1$s\u201D</string>
+    <string name="locations_search_empty_message">Try a different search term.</string>
+    <string name="locations_clear_search">Clear search</string>
+    <string name="locations_premium_note">Premium \u2014 not available in free mode</string>
+    <string name="locations_optimal">Optimal location</string>
+    <string name="locations_free">Free</string>
+    <string name="locations_selected">Selected</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_connection">Connection</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_language">Language</string>
+    <string name="settings_section_dns">DNS</string>
+    <string name="settings_section_local_proxy">Local proxy</string>
+    <string name="settings_section_split">Split tunneling</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_language">App language</string>
+    <string name="language_system">System default</string>
+    <string name="language_fa">\u0641\u0627\u0631\u0633\u06CC</string>
+    <string name="language_en">English</string>
+    <string name="settings_chain_test">Test connection chain</string>
+    <string name="settings_chain_test_desc">Runs guest token \u2192 locations \u2192 server list \u2192 exit IP against the live VeePN network.</string>
+    <string name="chain_title">Connection chain test</string>
+    <string name="chain_step_token">Guest token</string>
+    <string name="chain_step_locations">Locations</string>
+    <string name="chain_step_servers">Server list (%1$s)</string>
+    <string name="chain_step_exit_ip">Exit IP through tunnel</string>
+    <string name="chain_token_ok">acquired</string>
+    <string name="chain_locations_ok">%1$d total, %2$d free</string>
+    <string name="chain_servers_ok">%1$d usable servers</string>
+    <string name="chain_exit_ip_missing">no IP returned by the echo mirrors</string>
+    <string name="settings_exit_check">Verify exit location</string>
+    <string name="settings_proxy_only">Proxy-only mode (no TUN)</string>
+    <string name="settings_tun_fallback">On TUN failure, fall back to proxy-only</string>
+    <string name="settings_mtu">Tunnel MTU</string>
+    <string name="settings_selected_region">Selected region</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_dns_resolver">Resolver (local proxy DNS)</string>
+    <string name="settings_dns_picker_title">Resolver DNS</string>
+    <string name="settings_custom_doh">Custom DoH URL</string>
+    <string name="settings_not_set">Not set</string>
+    <string name="settings_socks_bind">SOCKS5 bind address</string>
+    <string name="settings_socks_port">SOCKS5 port</string>
+    <string name="settings_http_proxy">HTTP proxy</string>
+    <string name="settings_http_port">HTTP proxy port</string>
+    <string name="settings_excluded_apps">Excluded apps</string>
+    <string name="settings_excluded_apps_count">%1$d selected</string>
+    <string name="excluded_title">Excluded apps (bypass the tunnel)</string>
+    <string name="excluded_search_label">Search apps</string>
+    <string name="excluded_loading">Loading apps\u2026</string>
+    <string name="excluded_empty">No apps match your search.</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_logs">Logs</string>
+    <string name="settings_app_update">App update</string>
+    <string name="settings_range_supporting">Between %1$d and %2$d</string>
+    <string name="settings_bind_supporting">IPv4 address, e.g. 127.0.0.1</string>
+    <string name="settings_doh_supporting">An https:// DNS-over-HTTPS endpoint</string>
+    <string name="settings_error_range">Enter a number between %1$d and %2$d.</string>
+    <string name="settings_error_invalid_ip">Enter a valid IPv4 address.</string>
+    <string name="settings_error_invalid_url">Enter a valid https:// URL.</string>
+    <string name="settings_lan_warning_title">Expose the proxy on your network?</string>
+    <string name="settings_lan_warning_message">Binding to %1$s makes the iVeePN local proxy reachable by other devices on your local network. Only continue if you trust everyone on this network.</string>
+    <string name="settings_lan_warning_confirm">Expose anyway</string>
+
+    <!-- App update states (Settings row + banner) -->
+    <string name="update_state_check">Check for updates</string>
+    <string name="update_state_checking">Checking\u2026</string>
+    <string name="update_state_available">Update available: v%1$s</string>
+    <string name="update_state_uptodate">Up to date</string>
+    <string name="update_state_downloading">Downloading\u2026</string>
+    <string name="update_state_ready">Ready to install</string>
+    <string name="update_state_failed">Couldn\'t check \u2014 view details</string>
+
+    <!-- Update dialog -->
+    <string name="update_title_available">Update available</string>
+    <string name="update_title_downloading">Downloading update</string>
+    <string name="update_title_ready">Ready to install</string>
+    <string name="update_title_failed">Update failed</string>
+    <string name="update_subtitle_available">A new version is ready</string>
+    <string name="update_subtitle_ready">The new version has been downloaded</string>
+    <string name="update_subtitle_failed">Something went wrong while updating</string>
+    <string name="update_current">Current</string>
+    <string name="update_new">New</string>
+    <string name="update_downloading_percent">Downloading\u2026 %1$d%%</string>
+    <string name="update_action_download">Download update</string>
+    <string name="update_action_install">Install</string>
+    <string name="update_action_background">Background</string>
+    <string name="update_action_later">Later</string>
+
+    <!-- Logs -->
+    <string name="logs_title_count">Logs (%1$d)</string>
+    <string name="logs_title_filtered">Logs (%1$d/%2$d)</string>
+    <string name="logs_filter_all">All</string>
+    <string name="logs_filter_info">Info</string>
+    <string name="logs_filter_problems">Problems</string>
+    <string name="logs_empty_none">No log entries yet.</string>
+    <string name="logs_empty_problems">No warnings or errors. Nothing has gone wrong.</string>
+    <string name="logs_empty_filter">Nothing matches this filter.</string>
+    <string name="logs_clear_title">Clear logs?</string>
+    <string name="logs_clear_message">All log entries will be removed. This cannot be undone.</string>
+    <string name="logs_toast_empty">No log entries yet</string>
+    <string name="logs_toast_copied">Logs copied</string>
+    <string name="logs_toast_entry_copied">Entry copied</string>
+    <string name="logs_share_chooser">Save or send iVeePN logs</string>
+    <string name="logs_clip_label">iVeePN logs</string>
+    <string name="cd_share_logs">Save/share logs as a file</string>
+    <string name="cd_copy_logs">Copy logs</string>
+    <string name="cd_clear_logs">Clear logs</string>
+    <string name="cd_copy_entry">Copy entry</string>
+
+    <!-- Friendly errors (UiErrors) -->
+    <string name="err_network_unreachable">No connection to the network. Check your internet connection and try again.</string>
+    <string name="err_timeout">The connection timed out. Check your network and try again.</string>
+    <string name="err_http_auth">The service rejected the request (sign-in problem). Please try again in a moment.</string>
+    <string name="err_http_rate_limited">Too many requests right now. Please wait a bit and try again.</string>
+    <string name="err_http_server">The service is having trouble right now. Please try again later.</string>
+    <string name="err_http_generic">The request failed. Check your connection and try again.</string>
+    <string name="err_update_integrity">The downloaded update failed verification and was discarded. Please try again.</string>
+    <string name="err_unknown">Something went wrong. Please try again.</string>
+
+    <!-- VPN service notification + user-facing service messages -->
+    <string name="notif_channel_name">VPN status</string>
+    <string name="notif_disconnect">Disconnect</string>
+    <string name="notif_connecting">Connecting\u2026</string>
+    <string name="notif_waiting_network">Waiting for network\u2026</string>
+    <string name="notif_reconnecting">Reconnecting\u2026</string>
+    <string name="notif_connected_format">Connected \u2022 %1$s</string>
+    <string name="notif_proxy_format">Proxy active \u2022 %1$s:%2$d</string>
+    <string name="notif_proxy_http_format">Proxy active \u2022 SOCKS %1$d, HTTP %2$d</string>
+    <string name="notif_proxy_only_title">Proxy only \u2014 tunnel off</string>
+    <string name="notif_speed_format">\u2193 %1$s \u00B7 \u2191 %2$s</string>
+    <string name="notif_tun_fallback">TUN failed \u2014 running in proxy-only mode. Apps must use the local proxy (%1$s:%2$d); other traffic is NOT protected.</string>
+    <string name="service_err_unreachable">Could not reach the VeePN network after %1$d attempts. Check your connection and try again.</string>
+    <string name="service_err_session_closed">The connection to the VeePN network closed immediately, %1$d times in a row. Try again shortly or pick a different location.</string>
+    <string name="service_err_tun_failed">Failed to establish the TUN interface</string>
+    <string name="service_err_tunnel_start">Failed to start the tunnel engine</string>
+    <string name="service_err_revoked">VPN permission was revoked by the system</string>
+    <string name="service_err_reconnecting">Still trying to reconnect to the VeePN network. Tap Disconnect to stop.</string>
+
+    <!-- MainActivity -->
+    <string name="main_vpn_permission_denied">iVeePN needs Android\'s VPN permission to tunnel this device\'s traffic. Proxy-only mode in Settings works without it.</string>
 </resources>

@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,19 +52,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.pishi.iveepn.BuildConfig
+import com.pishi.iveepn.IVeePNApp
+import com.pishi.iveepn.R
+import com.pishi.iveepn.data.AppLogger
 import com.pishi.iveepn.data.formatBytes
+import com.pishi.iveepn.data.withAppLocale
+import com.pishi.iveepn.ui.UiErrors
+import com.pishi.iveepn.ui.theme.rememberAnimationsEnabled
 import com.pishi.iveepn.util.AppUpdateChecker
 import com.pishi.iveepn.util.UpdateInfo
 import kotlinx.coroutines.CancellationException
@@ -105,11 +111,18 @@ class AppUpdateController(private val appContext: Context) {
     @Volatile
     private var cancelRequested = false
 
+    private fun localizedContext(): Context =
+        (appContext as? IVeePNApp)?.let { appContext.withAppLocale(it.settingsStore) } ?: appContext
+
     fun checkOnLaunch() {
-        if (state == UpdateUiState.Idle) check()
+        if (state == UpdateUiState.Idle) runCheck(openDialogOnFound = false)
     }
 
     fun check() {
+        runCheck(openDialogOnFound = true)
+    }
+
+    private fun runCheck(openDialogOnFound: Boolean) {
         if (state is UpdateUiState.Checking || state is UpdateUiState.Downloading) return
         state = UpdateUiState.Checking
         scope.launch {
@@ -120,13 +133,12 @@ class AppUpdateController(private val appContext: Context) {
             } catch (error: Exception) {
                 // A failed check is NOT "up to date": surface it so the
                 // Settings row can say the check itself failed.
-                state = UpdateUiState.Failed(
-                    "Couldn't check for updates (${error.message ?: "network error"})",
-                )
+                AppLogger.e("AppUpdate", "update check failed", error)
+                state = UpdateUiState.Failed(UiErrors.friendlyMessage(localizedContext(), error))
                 return@launch
             }
             state = if (found != null) {
-                dialogVisible = true
+                if (openDialogOnFound) dialogVisible = true
                 UpdateUiState.Available(found)
             } else {
                 UpdateUiState.UpToDate
@@ -178,7 +190,8 @@ class AppUpdateController(private val appContext: Context) {
                 state = if (cancelRequested) {
                     UpdateUiState.Available(info)
                 } else {
-                    UpdateUiState.Failed(error.message ?: "Download failed")
+                    AppLogger.e("AppUpdate", "update download failed", error)
+                    UpdateUiState.Failed(UiErrors.friendlyMessage(localizedContext(), error))
                 }
             }
         }
@@ -337,22 +350,15 @@ private fun apkSignerSha256(context: android.content.Context, file: File): Strin
 
 
 // ---------------------------------------------------------------------------
-// Update dialog — the themed design built for Anvex's update popup (dark
-// glassy card, glowing download glyph, current → new version card, asset
-// chip, gradient progress bar with byte counter, and living color: the
-// glow and border breathe and a shimmer sweeps the bar while
-// downloading), restyled to the iVeePN palette and type. The controller
-// and its state machine above are unchanged — only the presentation
-// moved off the plain AlertDialog. Colors are explicit (always dark)
-// so the popup looks the same on light and dark system themes.
+// Update dialog — glowing download glyph, current → new version card,
+// asset chip, progress bar with byte counter, and living color: the glow
+// and border breathe and a shimmer sweeps the bar while downloading
+// (static when the system disables animations). The palette derives
+// entirely from MaterialTheme.colorScheme, so the popup follows the
+// app's light/dark theme. Surfacing is non-intrusive: a launch check
+// only records the Available state (Home shows a banner); the dialog
+// opens on an explicit tap or a manual check from Settings.
 // ---------------------------------------------------------------------------
-
-private val UpdateCardBg = Color(0xFF22232B)
-private val UpdateGlass = Color.White.copy(alpha = 0.08f)
-private val UpdateSubtitle = Color.White.copy(alpha = 0.65f)
-private val UpdateLabel = Color.White.copy(alpha = 0.55f)
-private val UpdateFileText = Color.White.copy(alpha = 0.85f)
-private val UpdateTrack = Color.White.copy(alpha = 0.12f)
 
 @Composable
 fun AppUpdateDialog(controller: AppUpdateController) {
@@ -372,24 +378,28 @@ fun AppUpdateDialog(controller: AppUpdateController) {
     // transition drives all of them; it only runs while the dialog is
     // composed, so nothing animates after dismissal.
     val motion = rememberInfiniteTransition(label = "update-motion")
-    val glowPulse by motion.animateFloat(
+    val glowAnim by motion.animateFloat(
         initialValue = 0.30f,
         targetValue = 0.60f,
         animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Reverse),
         label = "glow-pulse",
     )
-    val borderPulse by motion.animateFloat(
+    val borderAnim by motion.animateFloat(
         initialValue = 0.45f,
         targetValue = 0.80f,
         animationSpec = infiniteRepeatable(tween(2400), RepeatMode.Reverse),
         label = "border-pulse",
     )
-    val shimmerPhase by motion.animateFloat(
+    val shimmerAnim by motion.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart),
         label = "shimmer-phase",
     )
+    val animationsEnabled = rememberAnimationsEnabled()
+    val glowPulse = if (animationsEnabled) glowAnim else 0.45f
+    val borderPulse = if (animationsEnabled) borderAnim else 0.6f
+    val shimmerPhase = if (animationsEnabled) shimmerAnim else 0f
 
     Dialog(
         onDismissRequest = { controller.dismissDialog() },
@@ -400,9 +410,9 @@ fun AppUpdateDialog(controller: AppUpdateController) {
     ) {
         Surface(
             shape = RoundedCornerShape(28.dp),
-            color = UpdateCardBg,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = borderPulse)),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().widthIn(max = 420.dp),
         ) {
             Column(
                 // Cap the height and scroll the content: on short
@@ -432,7 +442,7 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                         Modifier
                             .size(64.dp)
                             .clip(RoundedCornerShape(18.dp))
-                            .background(UpdateCardBg)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                             .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -449,26 +459,30 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        when (state) {
-                            is UpdateUiState.Downloading -> "Downloading update"
-                            is UpdateUiState.ReadyToInstall -> "Ready to install"
-                            is UpdateUiState.Failed -> "Update failed"
-                            else -> "Update available"
-                        },
-                        color = Color.White,
-                        fontSize = 24.sp,
+                        stringResource(
+                            when (state) {
+                                is UpdateUiState.Downloading -> R.string.update_title_downloading
+                                is UpdateUiState.ReadyToInstall -> R.string.update_title_ready
+                                is UpdateUiState.Failed -> R.string.update_title_failed
+                                else -> R.string.update_title_available
+                            },
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        when (state) {
-                            is UpdateUiState.ReadyToInstall -> "The new version has been downloaded"
-                            is UpdateUiState.Failed -> "Something went wrong while updating"
-                            else -> "A new version is ready"
-                        },
-                        color = UpdateSubtitle,
-                        fontSize = 14.sp,
+                        stringResource(
+                            when (state) {
+                                is UpdateUiState.ReadyToInstall -> R.string.update_subtitle_ready
+                                is UpdateUiState.Failed -> R.string.update_subtitle_failed
+                                else -> R.string.update_subtitle_available
+                            },
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -477,7 +491,7 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                     // Current → new version card.
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = UpdateGlass,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -485,20 +499,28 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            UpdateVersionCell("Current", "v${BuildConfig.VERSION_NAME}", Color.White)
+                            UpdateVersionCell(
+                                stringResource(R.string.update_current),
+                                "v${BuildConfig.VERSION_NAME}",
+                                MaterialTheme.colorScheme.onSurface,
+                            )
                             Icon(
                                 Icons.Filled.ArrowForward,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(28.dp),
                             )
-                            UpdateVersionCell("New", "v${info.version}", MaterialTheme.colorScheme.primary)
+                            UpdateVersionCell(
+                                stringResource(R.string.update_new),
+                                "v${info.version}",
+                                MaterialTheme.colorScheme.primary,
+                            )
                         }
                     }
                     // Asset chip: package glyph + file name + size.
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = UpdateGlass,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -509,38 +531,14 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                             Icon(
                                 Icons.Filled.Archive,
                                 contentDescription = null,
-                                tint = UpdateLabel,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp),
                             )
                             Text(
                                 "${info.assetName} · ${formatBytes(info.sizeBytes)}",
-                                color = UpdateFileText,
-                                fontSize = 13.5.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodyMedium,
                                 )
-                        }
-                    }
-                    // The expected hash, so it can be compared against
-                    // the release page out-of-band. Rendered in fixed
-                    // 16-character chunks, one per line: the full 64-char
-                    // digest is wider than the dialog and would otherwise
-                    // wrap mid-hash, which makes visual comparison hard.
-                    info.sha256?.let { sha ->
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(
-                                "SHA-256:",
-                                color = UpdateLabel,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                            )
-                            sha.chunked(16).forEach { chunk ->
-                                Text(
-                                    chunk,
-                                    color = UpdateLabel,
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    maxLines = 1,
-                                )
-                            }
                         }
                     }
                 }
@@ -557,9 +555,9 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Text(
-                            "Downloading… $percent%",
-                            color = Color.White,
-                            fontSize = 15.sp,
+                            stringResource(R.string.update_downloading_percent, percent),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.fillMaxWidth(),
                         )
                         BoxWithConstraints(
@@ -578,7 +576,7 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                                 Box(
                                     Modifier.fillMaxWidth().height(8.dp)
                                         .clip(RoundedCornerShape(4.dp))
-                                        .background(UpdateTrack),
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
                                 )
                                 Box(
                                     Modifier.fillMaxWidth(fraction).height(8.dp)
@@ -634,8 +632,8 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                         }
                         Text(
                             "${formatBytes(state.downloaded)} / ${formatBytes(total)}",
-                            color = UpdateLabel,
-                            fontSize = 13.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -644,7 +642,7 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                     Text(
                         state.message,
                         color = MaterialTheme.colorScheme.error,
-                        fontSize = 13.5.sp,
+                        style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -660,9 +658,12 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                                 onClick = { controller.dismissDialog() },
                                 modifier = Modifier.heightIn(min = 48.dp),
                             ) {
-                                Text("Later", color = UpdateLabel)
+                                Text(
+                                    stringResource(R.string.update_action_later),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
-                            UpdateGradientButton("Download update") {
+                            UpdatePrimaryButton(stringResource(R.string.update_action_download)) {
                                 controller.startDownload()
                             }
                         }
@@ -671,7 +672,10 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                                 onClick = { controller.dismissDialog() },
                                 modifier = Modifier.heightIn(min = 48.dp),
                             ) {
-                                Text("Background", color = UpdateLabel)
+                                Text(
+                                    stringResource(R.string.update_action_background),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             Button(
                                 onClick = { controller.cancelDownload() },
@@ -684,7 +688,7 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                                 modifier = Modifier.heightIn(min = 48.dp),
                             ) {
                                 Text(
-                                    "Cancel",
+                                    stringResource(R.string.common_cancel),
                                     fontWeight = FontWeight.SemiBold,
                                     )
                             }
@@ -694,9 +698,12 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                                 onClick = { controller.dismissDialog() },
                                 modifier = Modifier.heightIn(min = 48.dp),
                             ) {
-                                Text("Later", color = UpdateLabel)
+                                Text(
+                                    stringResource(R.string.update_action_later),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
-                            UpdateGradientButton("Install") {
+                            UpdatePrimaryButton(stringResource(R.string.update_action_install)) {
                                 controller.install(context)
                             }
                         }
@@ -705,7 +712,10 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                                 onClick = { controller.dismissDialog() },
                                 modifier = Modifier.heightIn(min = 48.dp),
                             ) {
-                                Text("OK", color = UpdateLabel)
+                                Text(
+                                    stringResource(R.string.common_ok),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                         else -> {}
@@ -724,34 +734,29 @@ private fun UpdateVersionCell(label: String, version: String, versionColor: Colo
     ) {
         Text(
             label.uppercase(),
-            color = UpdateLabel,
-            fontSize = 11.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
             )
         Text(
             version,
             color = versionColor,
-            fontSize = 22.sp,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             )
     }
 }
 
 @Composable
-private fun UpdateGradientButton(text: String, onClick: () -> Unit) {
+private fun UpdatePrimaryButton(text: String, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
+            containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
         ),
         shape = RoundedCornerShape(50),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
-        modifier = Modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(50))
-            .background(
-                Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary)),
-            ),
+        modifier = Modifier.heightIn(min = 48.dp),
     ) {
         Text(text, fontWeight = FontWeight.SemiBold)
     }

@@ -1,6 +1,7 @@
 package com.pishi.iveepn.quicksettings
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.net.VpnService
@@ -12,6 +13,7 @@ import com.pishi.iveepn.MainActivity
 import com.pishi.iveepn.R
 import com.pishi.iveepn.data.model.ConnectionState
 import com.pishi.iveepn.data.SettingsStore
+import com.pishi.iveepn.data.withAppLocale
 import com.pishi.iveepn.vpn.IVeePNVpnService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,27 +67,31 @@ class QuickConnectTileService : TileService() {
         }
     }
 
+    private fun locCtx(): Context =
+        (applicationContext as? IVeePNApp)?.let { applicationContext.withAppLocale(it.settingsStore) } ?: this
+
     private fun updateTileState(state: ConnectionState) {
         val tile = qsTile ?: return
         tile.icon = Icon.createWithResource(this, R.drawable.ic_widget_power)
-        tile.label = getString(R.string.quick_connect)
+        tile.label = locCtx().getString(R.string.quick_connect)
         when (state) {
             ConnectionState.CONNECTED -> {
                 tile.state = Tile.STATE_ACTIVE
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    tile.subtitle = getString(R.string.quick_connect_connected)
+                    tile.subtitle = locCtx().getString(R.string.quick_connect_connected)
                 }
             }
             ConnectionState.CONNECTING -> {
-                tile.state = Tile.STATE_ACTIVE
+                tile.state = Tile.STATE_INACTIVE
+                tile.label = locCtx().getString(R.string.quick_connect_connecting)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    tile.subtitle = getString(R.string.quick_connect_connecting)
+                    tile.subtitle = locCtx().getString(R.string.quick_connect_connecting)
                 }
             }
             ConnectionState.DISCONNECTED -> {
                 tile.state = Tile.STATE_INACTIVE
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    tile.subtitle = getString(R.string.quick_connect_disconnected)
+                    tile.subtitle = locCtx().getString(R.string.quick_connect_disconnected)
                 }
             }
         }

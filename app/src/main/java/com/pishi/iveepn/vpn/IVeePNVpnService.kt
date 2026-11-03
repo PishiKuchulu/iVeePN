@@ -18,10 +18,13 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.pishi.iveepn.IVeePNApp
 import com.pishi.iveepn.MainActivity
+import com.pishi.iveepn.R
 import com.pishi.iveepn.data.AppLogger
 import com.pishi.iveepn.data.SettingsStore
 import com.pishi.iveepn.data.formatBytesPerSecond
+import com.pishi.iveepn.data.withAppLocale
 import com.pishi.iveepn.data.model.ConnectionState
+import com.pishi.iveepn.ui.UiErrors
 import com.pishi.iveepn.vpn.socks.LocalHttpProxyServer
 import com.pishi.iveepn.vpn.socks.LocalSocks5Server
 import com.pishi.iveepn.vpn.tun.HevSocks5Tunnel
@@ -107,13 +110,15 @@ class IVeePNVpnService : VpnService() {
 
     @Volatile private var tunnelInterfaceActive = false
 
+    @Volatile private var notificationProxyOnly: Boolean = false
+
     @Volatile private var boundNetwork: Network? = null
 
     @Volatile private var reportedUnderlying: Network? = null
 
     @Volatile private var lastUnhealthyRedialAt = 0L
 
-    @Volatile private var statusLabel: String = "Connecting…"
+    @Volatile private var statusLabel: String = ""
 
     @Volatile private var foregroundActive = false
 
@@ -211,8 +216,16 @@ class IVeePNVpnService : VpnService() {
         runCatching { session.close() }
     }
 
+    private fun loc(): Context =
+        (applicationContext as? IVeePNApp)?.let { applicationContext.withAppLocale(it.settingsStore) }
+            ?: applicationContext
+
+    private fun s(@androidx.annotation.StringRes res: Int, vararg args: Any): String =
+        loc().getString(res, *args)
+
     override fun onCreate() {
         super.onCreate()
+        statusLabel = s(R.string.notif_connecting)
         runCatching {
             val underlyingNetworks = NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -240,6 +253,7 @@ class IVeePNVpnService : VpnService() {
         connectionGeneration++
         releaseResources(detachResources(), stopNativeTunnel = true)
         releaseWakeLocks()
+        notificationProxyOnly = false
         foregroundActive = false
         lastNotificationText = null
         boundNetwork = null
@@ -296,7 +310,7 @@ class IVeePNVpnService : VpnService() {
             }
             _state.value = ConnectionState.CONNECTING
             _lastError.value = null
-            statusLabel = "Connecting…"
+            statusLabel = s(R.string.notif_connecting)
             enterForeground(statusLabel)
 
             acquireWakeLocks()
@@ -310,6 +324,7 @@ class IVeePNVpnService : VpnService() {
     }
 
     private fun requestDisconnect(reason: String) {
+        notificationProxyOnly = false
         val idle = _state.value == ConnectionState.DISCONNECTED &&
             connectJob == null &&
             watchdogJob == null
@@ -399,16 +414,16 @@ class IVeePNVpnService : VpnService() {
 
             fun connectedLabel(): String = if (proxyOnlyMode) {
                 if (httpProxyEnabled) {
-                    "Proxy active • SOCKS $socksPort, HTTP $httpProxyPort"
+                    s(R.string.notif_proxy_http_format, socksPort, httpProxyPort)
                 } else {
-                    "Proxy active • $socksBindAddress:$socksPort"
+                    s(R.string.notif_proxy_format, socksBindAddress, socksPort)
                 }
             } else {
                 val loc = app.selectedLocationStore.load()
                 val name = loc?.let {
                     listOf(it.cityName, it.countryName).filter { s -> s.isNotBlank() }.joinToString(", ")
                 }.orEmpty()
-                if (name.isNotBlank()) "Connected • $name" else "Connected • ${region.uppercase()}"
+                s(R.string.notif_connected_format, name.ifBlank { region.uppercase() })
             }
 
             val mapdnsActive = !proxyOnlyMode && dohUrl == null
@@ -451,16 +466,14 @@ class IVeePNVpnService : VpnService() {
                     // LOUD fallback to proxy-only mode; with the fallback off
                     // the connect fails instead of leaking traffic.
                     if (!settingsStore.tunFallbackToProxy) {
-                        error("Failed to establish the TUN interface")
+                        error(s(R.string.service_err_tun_failed))
                     }
                     AppLogger.e(
                         TAG,
                         "TUN interface could not be established; falling back to proxy-only mode " +
                             "(only apps configured to use the local proxy are protected)",
                     )
-                    _lastError.value =
-                        "TUN failed — running in proxy-only mode. Apps must use the local proxy " +
-                            "($socksBindAddress:$socksPort); other traffic is NOT protected."
+                    _lastError.value = s(R.string.notif_tun_fallback, socksBindAddress, socksPort)
                     proxyOnlyMode = true
                     tunnelInterfaceActive = false
                 } else {
@@ -479,11 +492,12 @@ class IVeePNVpnService : VpnService() {
                         mtu = settingsStore.mtu,
                     )
                     val tunnelStarted = HevSocks5Tunnel.start(tunnelConfigPath, fd.fd)
-                    if (!tunnelStarted) error("Failed to start the tun2socks tunnel (hev-socks5-tunnel)")
+                    if (!tunnelStarted) error(s(R.string.service_err_tunnel_start))
                     AppLogger.i(TAG, "connect: TUN interface up, hev-socks5-tunnel started")
                     delay(POST_TUN_SETTLE_MS)
                 }
             }
+            notificationProxyOnly = proxyOnlyMode
             ensureGenerationCurrent(myGeneration)
 
             suspend fun dialUpstream(): VeePNSession {
@@ -534,15 +548,9 @@ class IVeePNVpnService : VpnService() {
                 if (dialAttempt >= INITIAL_DIAL_MAX_ATTEMPTS) {
                     val failure = lastDialFailure
                     if (failure != null) {
-                        error(
-                            "Could not reach the VeePN network after $dialAttempt attempts. " +
-                                "Last error: ${friendlyErrorMessage(failure)}",
-                        )
+                        error(s(R.string.service_err_unreachable, dialAttempt))
                     }
-                    error(
-                        "The upstream session closed immediately, $dialAttempt times in a row. " +
-                            "Try again shortly or pick a different location.",
-                    )
+                    error(s(R.string.service_err_session_closed, dialAttempt))
                 }
 
                 delay(fullJitterBackoffMs(dialAttempt - 1, INITIAL_DIAL_BACKOFF_BASE_MS, INITIAL_DIAL_BACKOFF_CAP_MS))
@@ -608,7 +616,7 @@ class IVeePNVpnService : VpnService() {
                         if (!waitingForNetwork) {
                             AppLogger.i(TAG, "no usable network; holding the session and waiting for connectivity")
                             waitingForNetwork = true
-                            statusLabel = "Waiting for network…"
+                            statusLabel = s(R.string.notif_waiting_network)
                             updateNotification(statusLabel)
                         }
                         consecutiveFailures = 0
@@ -622,7 +630,7 @@ class IVeePNVpnService : VpnService() {
                     AppLogger.w(TAG, "upstream session is down; attempting to reconnect")
                     runCatching { current?.close() }
                     if (upstreamSession === current) upstreamSession = null
-                    statusLabel = "Reconnecting…"
+                    statusLabel = s(R.string.notif_reconnecting)
                     updateNotification(statusLabel)
 
                     val fresh = try {
@@ -640,8 +648,7 @@ class IVeePNVpnService : VpnService() {
 
                     if (fresh == null) {
                         if (consecutiveFailures == RECONNECT_FAILURES_BEFORE_WARNING) {
-                            _lastError.value =
-                                "Still trying to reconnect to the VeePN network. Tap Disconnect to stop."
+                            _lastError.value = s(R.string.service_err_reconnecting)
                             AppLogger.e(
                                 TAG,
                                 "$consecutiveFailures consecutive reconnect failures; continuing to retry with backoff " +
@@ -674,9 +681,9 @@ class IVeePNVpnService : VpnService() {
                 return@onFailure
             }
             val message = if (failure is TimeoutCancellationException) {
-                "Connection timed out. Check your network and try again."
+                s(R.string.err_timeout)
             } else {
-                friendlyErrorMessage(failure)
+                UiErrors.friendlyMessage(loc(), failure)
             }
             AppLogger.e(TAG, "connect failed", failure)
             _lastError.value = message
@@ -686,18 +693,6 @@ class IVeePNVpnService : VpnService() {
             stopSelf()
         }
         connectJob = null
-    }
-
-    private fun friendlyErrorMessage(error: Throwable): String {
-        val untrusted = generateSequence(error) { it.cause }.take(8).any {
-            it is java.security.cert.CertPathValidatorException || it is java.security.cert.CertificateException
-        }
-        val base = error.message ?: (error::class.simpleName ?: "Connection failed")
-        return if (untrusted) {
-            "$base (this device does not trust the server's certificate; updating Android or the device's date/time may help)"
-        } else {
-            base
-        }
     }
 
     private fun establishTun(
@@ -801,7 +796,7 @@ class IVeePNVpnService : VpnService() {
     }
 
     override fun onRevoke() {
-        requestDisconnect("VPN permission was revoked by the system")
+        requestDisconnect(s(R.string.service_err_revoked))
         super.onRevoke()
     }
 
@@ -829,7 +824,11 @@ class IVeePNVpnService : VpnService() {
                 )
                 updateNotification(
                     statusLabel,
-                    "↓ ${formatBytesPerSecond(rxRate)}  ↑ ${formatBytesPerSecond(txRate)}",
+                    s(
+                        R.string.notif_speed_format,
+                        formatBytesPerSecond(rxRate),
+                        formatBytesPerSecond(txRate),
+                    ),
                 )
             }
         }
@@ -846,21 +845,29 @@ class IVeePNVpnService : VpnService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val builder = NotificationCompat.Builder(this, IVeePNApp.VPN_NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("iVeePN")
+            .setContentTitle(
+                if (notificationProxyOnly) s(R.string.notif_proxy_only_title) else s(R.string.app_name),
+            )
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setLocalOnly(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Disconnect", disconnectIntent)
-        if (subText != null) {
-            builder.setStyle(NotificationCompat.BigTextStyle().bigText("$text\n$subText"))
-        }
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    if (subText != null) "$text\n$subText" else text,
+                ),
+            )
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                s(R.string.notif_disconnect),
+                disconnectIntent,
+            )
         return builder.build()
     }
 

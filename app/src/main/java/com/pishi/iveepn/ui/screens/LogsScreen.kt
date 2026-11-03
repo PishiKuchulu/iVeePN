@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
+import androidx.annotation.StringRes
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,12 +43,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import com.pishi.iveepn.R
 import com.pishi.iveepn.data.AppLogger
 import com.pishi.iveepn.data.LogEntry
 import com.pishi.iveepn.data.LogLevel
+import com.pishi.iveepn.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,10 +61,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private enum class LogFilter(val label: String, val levels: Set<LogLevel>) {
-    ALL("All", setOf(LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR)),
-    INFO("Info", setOf(LogLevel.INFO)),
-    PROBLEMS("Problems", setOf(LogLevel.WARN, LogLevel.ERROR)),
+private enum class LogFilter(@StringRes val labelRes: Int, val levels: Set<LogLevel>) {
+    ALL(R.string.logs_filter_all, setOf(LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR)),
+    INFO(R.string.logs_filter_info, setOf(LogLevel.INFO)),
+    PROBLEMS(R.string.logs_filter_problems, setOf(LogLevel.WARN, LogLevel.ERROR)),
 }
 
 private suspend fun writeLogFile(context: Context): File = withContext(Dispatchers.IO) {
@@ -77,12 +83,19 @@ fun LogsScreen(onBack: () -> Unit) {
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
     var filter by remember { mutableStateOf(LogFilter.ALL) }
     var showClearConfirm by remember { mutableStateOf(false) }
+    var expandedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+
+    fun copyEntry(entry: LogEntry) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.logs_clip_label), entry.message))
+        Toast.makeText(context, context.getString(R.string.logs_toast_entry_copied), Toast.LENGTH_SHORT).show()
+    }
 
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
-            title = { Text("Clear logs?") },
-            text = { Text("All log entries will be removed. This cannot be undone.") },
+            title = { Text(stringResource(R.string.logs_clear_title)) },
+            text = { Text(stringResource(R.string.logs_clear_message)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -90,12 +103,12 @@ fun LogsScreen(onBack: () -> Unit) {
                         showClearConfirm = false
                     },
                 ) {
-                    Text("Clear")
+                    Text(stringResource(R.string.common_clear))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirm = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.common_cancel))
                 }
             },
         )
@@ -113,19 +126,29 @@ fun LogsScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Text(
-                        if (visible.size == entries.size) "Logs (${entries.size})"
-                        else "Logs (${visible.size}/${entries.size})",
+                        if (visible.size == entries.size) {
+                            stringResource(R.string.logs_title_count, entries.size)
+                        } else {
+                            stringResource(R.string.logs_title_filtered, visible.size, entries.size)
+                        },
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                        )
                     }
                 },
                 actions = {
                     IconButton(onClick = {
                         if (entries.isEmpty()) {
-                            Toast.makeText(context, "No log entries yet", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.logs_toast_empty),
+                                Toast.LENGTH_SHORT,
+                            ).show()
                             return@IconButton
                         }
                         scope.launch {
@@ -142,23 +165,44 @@ fun LogsScreen(onBack: () -> Unit) {
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             context.startActivity(
-                                Intent.createChooser(shareIntent, "Save or send iVeePN logs").apply {
+                                Intent.createChooser(
+                                    shareIntent,
+                                    context.getString(R.string.logs_share_chooser),
+                                ).apply {
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 },
                             )
                         }
                     }) {
-                        Icon(Icons.Filled.Share, contentDescription = "Save/share logs as a file")
+                        Icon(
+                            Icons.Filled.Share,
+                            contentDescription = stringResource(R.string.cd_share_logs),
+                        )
                     }
                     IconButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("iVeePN logs", AppLogger.exportAsText()))
-                        Toast.makeText(context, "Logs copied", Toast.LENGTH_SHORT).show()
+                        clipboard.setPrimaryClip(
+                            ClipData.newPlainText(
+                                context.getString(R.string.logs_clip_label),
+                                AppLogger.exportAsText(),
+                            ),
+                        )
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.logs_toast_copied),
+                            Toast.LENGTH_SHORT,
+                        ).show()
                     }) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = "Copy logs")
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = stringResource(R.string.cd_copy_logs),
+                        )
                     }
                     IconButton(onClick = { showClearConfirm = true }) {
-                        Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear logs")
+                        Icon(
+                            Icons.Filled.DeleteSweep,
+                            contentDescription = stringResource(R.string.cd_clear_logs),
+                        )
                     }
                 },
             )
@@ -168,11 +212,11 @@ fun LogsScreen(onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(padding),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-        // Same 520.dp content cap Home/Login use, so log lines do not
-        // stretch edge-to-edge on tablets and foldables.
+        // The shared Spacing.contentMaxWidth cap (520.dp), so log lines
+        // do not stretch edge-to-edge on tablets and foldables.
         Column(
             Modifier
-                .widthIn(max = 520.dp)
+                .widthIn(max = Spacing.contentMaxWidth)
                 .fillMaxWidth()
                 .fillMaxHeight(),
         ) {
@@ -189,7 +233,7 @@ fun LogsScreen(onBack: () -> Unit) {
                         selected = filter == option,
                         onClick = { filter = option },
 
-                        label = { Text("${option.label} ($count)") },
+                        label = { Text("${stringResource(option.labelRes)} ($count)") },
                     )
                 }
             }
@@ -200,11 +244,13 @@ fun LogsScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        when {
-                            entries.isEmpty() -> "No log entries yet."
-                            filter == LogFilter.PROBLEMS -> "No warnings or errors. Nothing has gone wrong."
-                            else -> "Nothing matches this filter."
-                        },
+                        stringResource(
+                            when {
+                                entries.isEmpty() -> R.string.logs_empty_none
+                                filter == LogFilter.PROBLEMS -> R.string.logs_empty_problems
+                                else -> R.string.logs_empty_filter
+                            },
+                        ),
                         modifier = Modifier.padding(24.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -217,16 +263,36 @@ fun LogsScreen(onBack: () -> Unit) {
                             LogLevel.WARN -> MaterialTheme.colorScheme.tertiary
                             LogLevel.INFO -> MaterialTheme.colorScheme.onSurface
                         }
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
-                            Text(
-                                "${timeFormat.format(Date(entry.timestampMillis))} ${entry.level.name} [${entry.tag}]",
-                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                                color = color,
-                            )
-                            Text(
-                                entry.message,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                            )
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "${timeFormat.format(Date(entry.timestampMillis))} ${entry.level.name} [${entry.tag}]",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = color,
+                                )
+                                Text(
+                                    entry.message,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                    modifier = Modifier.combinedClickable(
+                                        onClick = {
+                                            expandedIds = if (entry.id in expandedIds) {
+                                                expandedIds - entry.id
+                                            } else {
+                                                expandedIds + entry.id
+                                            }
+                                        },
+                                        onLongClick = { copyEntry(entry) },
+                                    ),
+                                    maxLines = if (entry.id in expandedIds) Int.MAX_VALUE else 6,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IconButton(onClick = { copyEntry(entry) }) {
+                                Icon(
+                                    Icons.Filled.ContentCopy,
+                                    contentDescription = stringResource(R.string.cd_copy_entry),
+                                )
+                            }
                         }
                     }
                 }

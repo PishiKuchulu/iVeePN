@@ -1,4 +1,3 @@
-// Placeholder UI — original iVeePN design lands in P4
 package com.pishi.iveepn.ui.navigation
 
 import androidx.compose.runtime.Composable
@@ -9,6 +8,7 @@ import androidx.navigation.compose.composable
 import com.pishi.iveepn.IVeePNApp
 import com.pishi.iveepn.ui.components.AppUpdateController
 import com.pishi.iveepn.ui.components.AppUpdateDialog
+import com.pishi.iveepn.ui.components.UpdateUiState
 import com.pishi.iveepn.ui.screens.HomeScreen
 import com.pishi.iveepn.ui.screens.LocationsScreen
 import com.pishi.iveepn.ui.screens.LogsScreen
@@ -43,6 +43,8 @@ fun IVeePNNavGraph(
                 onNavigateToLogs = { navController.navigate(Routes.LOGS) },
                 onRequestConnect = onRequestConnect,
                 onDisconnect = onDisconnect,
+                updateInfo = (updateController.state as? UpdateUiState.Available)?.info,
+                onUpdateClick = { updateController.showDialog() },
             )
         }
         composable(Routes.SERVERS) {

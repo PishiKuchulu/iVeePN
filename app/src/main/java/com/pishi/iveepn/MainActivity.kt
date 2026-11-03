@@ -1,6 +1,7 @@
 package com.pishi.iveepn
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
@@ -8,12 +9,16 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.navigation.compose.rememberNavController
+import com.pishi.iveepn.data.AppLanguage
+import com.pishi.iveepn.data.SettingsStore
+import com.pishi.iveepn.data.withAppLocale
 import com.pishi.iveepn.ui.navigation.IVeePNNavGraph
 import com.pishi.iveepn.ui.theme.IVeePNTheme
 import com.pishi.iveepn.ui.theme.rememberThemeController
@@ -31,8 +36,7 @@ class MainActivity : ComponentActivity() {
 
             Toast.makeText(
                 this,
-                "iVeePN needs Android's VPN permission to tunnel this device's traffic. " +
-                    "Proxy-only mode in Settings works without it.",
+                getString(R.string.main_vpn_permission_denied),
                 Toast.LENGTH_LONG,
             ).show()
         }
@@ -69,7 +73,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun attachBaseContext(newBase: Context) {
+        val store = (newBase.applicationContext as? IVeePNApp)?.settingsStore ?: SettingsStore(newBase)
+        if (store.appLanguage == null) {
+            // Foundation default rule: Persian unless the system locale is English.
+            // Persisted once as an explicit choice; afterwards only an explicit
+            // "System default" selection follows the device locale.
+            store.appLanguage = if (java.util.Locale.getDefault().language == "en") AppLanguage.EN else AppLanguage.FA
+        }
+        super.attachBaseContext(newBase.withAppLocale(store))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = application as IVeePNApp
         setContent {

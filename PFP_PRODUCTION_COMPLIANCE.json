@@ -42,11 +42,14 @@
     "uiCompliance": {
       "status": "NEEDS MORE WORK",
       "evidence": [
-        "Screens are neutral functional wiring shells (plain Material 3 defaults); the skeleton's visual identity, world map and brand palette were deleted",
-        "Every control kept in the UI is wired to a real setting or action"
+        "Design direction #2 (Modern Premium) implemented as a design system: light+dark schemes derived from brand blue #3E7AF4 / green #00D68F, Vazirmatn type scale (sha256-verified fonts), 4/8dp spacing tokens, 20dp default card radius, semantic status colors wired into Home",
+        "Home, Locations, Logs and the update dialog redesigned on the design system (state-driven power button, skeleton loading, guided empty states, friendly errors with retry); notification, QS tile and widget localized and restyled",
+        "Full localization: 180 string keys in values + values-fa at verified parity; every redesigned surface uses string resources; layout direction follows the locale; in-app language setting persisted (System/Farsi/English) with the foundation default rule",
+        "30-row UI/UX audit fix wave: 17 rows fixed, 6 partially fixed, 7 not done — every open item is scoped to the Settings screen (see limitations); full mapping in the audit FIX-MAP"
       ],
       "limitations": [
-        "Original iVeePN UI design (direction #2, Modern Premium) is scheduled for P4 and not started"
+        "SettingsScreen redesign did NOT land in this wave (the assigned implementation helper was stopped by a safety refusal): Settings remains the P0 wiring shell with hardcoded English strings, no TopAppBar, decorative checkboxes, silent validation and no language picker UI (the store-level language mechanism works; MainActivity applies it)",
+        "Static verification only: no Gradle build and no on-device/runtime verification of this wave yet; CI after push is the build gate"
       ]
     },
     "releaseReadiness": {

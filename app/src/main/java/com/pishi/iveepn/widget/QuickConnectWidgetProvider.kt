@@ -14,6 +14,7 @@ import com.pishi.iveepn.MainActivity
 import com.pishi.iveepn.R
 import com.pishi.iveepn.data.SettingsStore
 import com.pishi.iveepn.data.model.ConnectionState
+import com.pishi.iveepn.data.withAppLocale
 import com.pishi.iveepn.ui.theme.ThemeMode
 import com.pishi.iveepn.vpn.IVeePNVpnService
 
@@ -133,22 +134,30 @@ class QuickConnectWidgetProvider : AppWidgetProvider() {
             // A text status under the button: the color of the power
             // icon alone does not say WHICH state the tunnel is in, and the
             // button's accessibility label must carry the state too.
+            val ctx = (context.applicationContext as? IVeePNApp)?.let {
+                context.withAppLocale(it.settingsStore)
+            } ?: context
             val statusText = when (state) {
                 ConnectionState.CONNECTED -> {
                     val countryName = runCatching {
                         com.pishi.iveepn.data.SelectedLocationStore(context).load()?.countryName
                     }.getOrNull()
-                    if (countryName.isNullOrBlank()) "Connected" else "Connected \u00B7 $countryName"
+                    countryName?.takeIf { it.isNotBlank() }?.let {
+                        ctx.getString(R.string.widget_connected_country, it)
+                    } ?: ctx.getString(R.string.quick_connect_connected)
                 }
-                ConnectionState.CONNECTING -> "Connecting\u2026"
-                ConnectionState.DISCONNECTED -> "Disconnected"
+                ConnectionState.CONNECTING -> ctx.getString(R.string.quick_connect_connecting)
+                ConnectionState.DISCONNECTED -> ctx.getString(R.string.quick_connect_disconnected)
             }
             views.setTextViewText(R.id.widget_status, statusText)
             views.setTextColor(
                 R.id.widget_status,
                 if (isDark) 0xFFFFFFFF.toInt() else 0xFF1E1A1D.toInt(),
             )
-            views.setContentDescription(R.id.widget_button, "Quick connect \u2014 $statusText")
+            views.setContentDescription(
+                R.id.widget_button,
+                ctx.getString(R.string.widget_button_cd, statusText),
+            )
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }

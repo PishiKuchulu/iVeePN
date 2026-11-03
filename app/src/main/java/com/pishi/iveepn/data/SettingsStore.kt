@@ -24,6 +24,23 @@ class SettingsStore(context: Context) {
             QuickConnectWidgetProvider.updateAll(appContext, IVeePNVpnService.state.value)
         }
 
+    /**
+     * In-app language choice; null means the user has never chosen (the
+     * resolved default — Persian, or English on English-locale devices — is
+     * persisted as an explicit choice by MainActivity on first launch).
+     */
+    var appLanguage: AppLanguage?
+        get() = prefs.getString(KEY_APP_LANGUAGE, null)?.let { raw ->
+            AppLanguage.entries.firstOrNull { it.name == raw }
+        }
+        set(value) {
+            if (value == null) {
+                prefs.edit().remove(KEY_APP_LANGUAGE).apply()
+            } else {
+                prefs.edit().putString(KEY_APP_LANGUAGE, value.name).apply()
+            }
+        }
+
     var exitCheckEnabled: Boolean
         get() = prefs.getBoolean(KEY_EXIT_CHECK, true)
         set(value) { prefs.edit().putBoolean(KEY_EXIT_CHECK, value).apply() }
@@ -161,6 +178,7 @@ class SettingsStore(context: Context) {
 
     companion object {
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_APP_LANGUAGE = "app_language"
         private const val KEY_EXIT_CHECK = "exit_check_enabled"
         private const val KEY_CUSTOM_MTU = "custom_mtu"
         private const val KEY_LAST_REGION = "last_region"
@@ -190,6 +208,12 @@ class SettingsStore(context: Context) {
                 val uri = java.net.URI.create(trimmed)
                 !uri.host.isNullOrBlank()
             }.getOrDefault(false)
+        }
+
+        /** True when a bind address only listens on this device (safe default). */
+        fun isLoopbackBind(value: String): Boolean {
+            val v = value.trim().lowercase()
+            return v == "localhost" || v == "::1" || v.startsWith("127.")
         }
 
         fun isValidIpAddress(value: String): Boolean {
