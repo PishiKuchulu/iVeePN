@@ -1,0 +1,60 @@
+{
+  "date": "2026-11-03",
+  "app": "iVeePN 1.0.0 (versionCode 1)",
+  "finalStatus": "EXPERIMENTAL - NOT PRODUCTION READY (P0/P1 implemented; STATIC verification only; CI build and live chain test pending)",
+  "gates": {
+    "artifactHygiene": {
+      "status": "PASS",
+      "evidence": [
+        "No keystores, secrets or governance/methodology documents in the repo (verified by tree scan at P0/P1 delivery)",
+        "No credentials in code; guest token and server passwords live only in EncryptedSharedPreferences at runtime"
+      ]
+    },
+    "buildCompliance": {
+      "status": "NOT VERIFIED",
+      "limitations": [
+        "Gradle cannot run in the authoring sandbox (daemon IPC environment limit); first CI run after the initial push is the build gate",
+        "hev-socks5-tunnel remains pinned to commit 9a06bc6e7989da54e3d32ff701ef7a7ce4995d3a with the build-time verify task (inherited from the skeleton)"
+      ]
+    },
+    "protocolLayer": {
+      "status": "NEEDS MORE WORK",
+      "evidence": [
+        "F-01..F-06 and F-17 implemented at static level: guest token + domain rotation, locations, server lists, CONNECT upstream, server pool, chain test in Settings, encrypted guest store",
+        "Unit tests written for the domain validator, CONNECT request building, server-list parsing and the pool breaker; not yet executed (no Gradle in sandbox)"
+      ],
+      "limitations": [
+        "G1 live chain test against the real VeePN network has not run yet; protocol fidelity is a source-level port of the desktop reference"
+      ]
+    },
+    "securityCompliance": {
+      "status": "NEEDS MORE WORK",
+      "evidence": [
+        "TLS verification uses the system trust store everywhere; no insecure mode exists in the code (grep-verified)",
+        "Encrypted store fails closed to session-only in-memory storage; no plaintext fallback",
+        "Local proxies bind 127.0.0.1 by default; the previous all-interfaces preset was removed",
+        "TUN IPv6 handling remains fail-closed"
+      ],
+      "limitations": [
+        "No dynamic/runtime security testing has been performed yet"
+      ]
+    },
+    "uiCompliance": {
+      "status": "NEEDS MORE WORK",
+      "evidence": [
+        "Screens are neutral functional wiring shells (plain Material 3 defaults); the skeleton's visual identity, world map and brand palette were deleted",
+        "Every control kept in the UI is wired to a real setting or action"
+      ],
+      "limitations": [
+        "Original iVeePN UI design (direction #2, Modern Premium) is scheduled for P4 and not started"
+      ]
+    },
+    "releaseReadiness": {
+      "status": "NOT VERIFIED",
+      "limitations": [
+        "No signed release exists yet; signing + CI release pipeline is P5 work",
+        "No on-device QA has been performed yet"
+      ]
+    }
+  }
+}

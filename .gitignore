@@ -1,0 +1,27 @@
+*.iml
+.gradle/
+.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+app/build/
+*.apk
+*.aab
+*.keystore
+*.jks
+keystore.properties
+app/src/main/jni/
+
+# --- VPeeN Android hygiene (added at import) ---
+# PFP governance is private methodology: never in this repo, in any form
+PFP.md
+AGENTS.md
+pfp/
+# signing material and local state
+release-keystore.jks
+*.p12
+local.properties
+!app/src/main/res/raw/*.pem
