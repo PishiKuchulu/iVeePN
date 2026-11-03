@@ -83,9 +83,9 @@ jobs:
           curl -fsSL -o vazirmatn_regular.ttf https://github.com/rastikerdar/vazirmatn/raw/v33.003/fonts/ttf/Vazirmatn-Regular.ttf
           curl -fsSL -o vazirmatn_medium.ttf https://github.com/rastikerdar/vazirmatn/raw/v33.003/fonts/ttf/Vazirmatn-Medium.ttf
           curl -fsSL -o vazirmatn_bold.ttf https://github.com/rastikerdar/vazirmatn/raw/v33.003/fonts/ttf/Vazirmatn-Bold.ttf
-          printf '%s  %s\n' b69fd4c680b8f3f225feabcc655a2c585d97627b8f5c0f9985e894069f3a56 vazirmatn_regular.ttf | sha256sum -c -
-          printf '%s  %s\n' b986623e4def10755e04be39f8ea7bcb1dc08b4a46fded1af824b869ed35 vazirmatn_medium.ttf | sha256sum -c -
-          printf '%s  %s\n' f635fdbea28d265ba83b4b1570dcf2f58d13c65469e61903b1c2d2ae723 vazirmatn_bold.ttf | sha256sum -c -
+          printf '%s  %s\n' b69fd4c680b8f3f225feabcc655a2c585d97627b8f5f5c0f9985e894069f3a56 vazirmatn_regular.ttf | sha256sum -c -
+          printf '%s  %s\n' b986623e4ddef10755e04be39f8ea7bcb1dc08bfe8dd0aa6af395736f256ad4a vazirmatn_medium.ttf | sha256sum -c -
+          printf '%s  %s\n' f635fdbea28f265de395ba83b4b1570dcf2f58d13c65469e61903b1c2d2ae723 vazirmatn_bold.ttf | sha256sum -c -
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
