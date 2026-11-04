@@ -54,7 +54,12 @@ tasks.matching { it.name.startsWith("externalNativeBuild") || it.name.contains("
     .configureEach { dependsOn(verifyHevSocks5Tunnel) }
 tasks.named("preBuild").configure { dependsOn(verifyHevSocks5Tunnel) }
 
-val releaseKeystoreFile = rootProject.file("release-keystore.jks")
+// The release keystore is a PKCS#12 file; accept either name so the CI
+// secret decode step can keep the format explicit (.p12 preferred).
+val releaseKeystoreFile = listOf("release-keystore.p12", "release-keystore.jks")
+    .map { rootProject.file(it) }
+    .firstOrNull { it.exists() }
+    ?: rootProject.file("release-keystore.p12")
 val releaseKeyAlias: String? = System.getenv("SIGNING_KEY_ALIAS")
 val releaseKeyPassword: String? = System.getenv("SIGNING_KEY_PASSWORD")
 val releaseStorePassword: String? = System.getenv("SIGNING_STORE_PASSWORD")

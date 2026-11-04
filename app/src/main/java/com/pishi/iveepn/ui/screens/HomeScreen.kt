@@ -1,15 +1,9 @@
 package com.pishi.iveepn.ui.screens
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,13 +21,10 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lan
-import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,13 +37,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -64,9 +53,10 @@ import com.pishi.iveepn.data.SettingsStore
 import com.pishi.iveepn.data.formatBytes
 import com.pishi.iveepn.data.model.ConnectionState
 import com.pishi.iveepn.data.model.countryCodeToEmojiFlag
+import com.pishi.iveepn.ui.components.VpnButtonState
+import com.pishi.iveepn.ui.components.VpnConnectButton
 import com.pishi.iveepn.ui.theme.LocalIVeePNStatusColors
 import com.pishi.iveepn.ui.theme.Spacing
-import com.pishi.iveepn.ui.theme.rememberAnimationsEnabled
 import com.pishi.iveepn.util.UpdateInfo
 import com.pishi.iveepn.vpn.ExitCheck
 import com.pishi.iveepn.vpn.IVeePNVpnService
@@ -135,33 +125,6 @@ fun HomeScreen(
             }
         }
     }
-
-    // Connected session ticker (wall clock, re-read every second).
-    var nowEpochMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(state) {
-        if (state == ConnectionState.CONNECTED) {
-            while (true) {
-                nowEpochMs = System.currentTimeMillis()
-                delay(1000)
-            }
-        }
-    }
-
-    // Power-button glow: pulses only while CONNECTING, and only when the
-    // system animator scale allows decorative animation.
-    val animationsEnabled = rememberAnimationsEnabled()
-    val glowTransition = rememberInfiniteTransition(label = "powerGlow")
-    val animatedGlowAlpha by glowTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.45f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "powerGlowAlpha",
-    )
-    val glowAlpha =
-        if (state == ConnectionState.CONNECTING && animationsEnabled) animatedGlowAlpha else 0.3f
 
     val locationLabel = selected?.let { loc ->
         val flag = countryCodeToEmojiFlag(loc.countryCode)
@@ -304,50 +267,24 @@ fun HomeScreen(
                     }
                 }
 
-                Box(contentAlignment = Alignment.Center) {
-                    Box(
-                        modifier = Modifier
-                            .size(216.dp)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        statusColor.copy(alpha = glowAlpha),
-                                        Color.Transparent,
-                                    ),
-                                ),
-                                shape = CircleShape,
-                            ),
-                    )
-                    Button(
-                        onClick = if (state == ConnectionState.DISCONNECTED) {
-                            onRequestConnect
-                        } else {
-                            onDisconnect
-                        },
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .size(176.dp)
-                            .semantics { stateDescription = statusText },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = statusColor,
-                            contentColor = Color.White,
-                        ),
-                        contentPadding = PaddingValues(0.dp),
-                    ) {
-                        Icon(
-                            Icons.Filled.PowerSettingsNew,
-                            contentDescription = null,
-                            modifier = Modifier.size(72.dp),
-                        )
-                    }
-                    if (state == ConnectionState.CONNECTING) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(196.dp),
-                            color = statusColors.connecting,
-                            strokeWidth = 4.dp,
-                        )
-                    }
-                }
+                VpnConnectButton(
+                    state = when (state) {
+                        ConnectionState.DISCONNECTED -> VpnButtonState.Disconnected
+                        ConnectionState.CONNECTING -> VpnButtonState.Connecting
+                        ConnectionState.CONNECTED -> VpnButtonState.Connected
+                    },
+                    onClick = if (state == ConnectionState.DISCONNECTED) {
+                        onRequestConnect
+                    } else {
+                        onDisconnect
+                    },
+                    connectedAtEpochMs = connectedAtEpochMs,
+                    disconnectedTitle = stringResource(R.string.status_disconnected),
+                    disconnectedSubtitle = stringResource(R.string.home_tap_to_connect),
+                    connectingTitle = stringResource(R.string.status_connecting),
+                    connectingSubtitle = stringResource(R.string.home_please_wait),
+                    stateDescription = statusText,
+                )
 
                 if (state == ConnectionState.CONNECTING) {
                     Text(
@@ -361,18 +298,6 @@ fun HomeScreen(
                             formatElapsedMmSs(connectingElapsedSec),
                         ),
                         style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-
-                if (state == ConnectionState.CONNECTED && connectedAtEpochMs != null) {
-                    val sessionSec =
-                        ((nowEpochMs - connectedAtEpochMs!!) / 1000).coerceAtLeast(0)
-                    Text(
-                        text = stringResource(
-                            R.string.home_session_duration,
-                            formatSessionDuration(sessionSec),
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
 
@@ -560,15 +485,3 @@ fun HomeScreen(
 private fun formatElapsedMmSs(totalSec: Int): String =
     String.format(Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
 
-private fun formatSessionDuration(totalSec: Long): String =
-    if (totalSec >= 3600) {
-        String.format(
-            Locale.US,
-            "%d:%02d:%02d",
-            totalSec / 3600,
-            (totalSec % 3600) / 60,
-            totalSec % 60,
-        )
-    } else {
-        String.format(Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
-    }
