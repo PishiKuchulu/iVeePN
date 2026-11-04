@@ -69,6 +69,7 @@ fun IVeePNNavGraph(
                 themeController = themeController,
                 updateController = updateController,
                 onNavigateToLogs = { navController.navigate(Routes.LOGS) },
+                onNavigateToLocations = { navController.navigate(Routes.SERVERS) },
                 onBack = { navController.popBackStack() },
             )
         }

@@ -36,6 +36,7 @@
     <string name="home_stat_traffic">Session traffic: %1$s</string>
     <string name="home_speed_format">\u2193 %1$s/s \u00B7 \u2191 %2$s/s</string>
     <string name="home_ping_format">Ping: %1$d ms</string>
+    <string name="home_server_format">Server: %1$s:%2$d</string>
     <string name="home_exit_ip_format">Exit IP: %1$s (%2$s)</string>
     <string name="home_your_ip_format">Your IP: %1$s</string>
     <string name="home_nav_locations">Locations</string>
@@ -101,6 +102,8 @@
     <string name="theme_dark">Dark</string>
     <string name="settings_dns_resolver">Resolver (local proxy DNS)</string>
     <string name="settings_dns_picker_title">Resolver DNS</string>
+    <string name="dns_provider_default">Default</string>
+    <string name="dns_provider_custom">Custom DoH</string>
     <string name="settings_custom_doh">Custom DoH URL</string>
     <string name="settings_not_set">Not set</string>
     <string name="settings_socks_bind">SOCKS5 bind address</string>

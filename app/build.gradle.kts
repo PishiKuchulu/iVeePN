@@ -135,12 +135,10 @@ android {
         buildConfig = true
     }
 
-    lint {
-        // BLD-FX-10: release builds are lint-checked again (this was disabled).
-        // abortOnError stays false until the existing lint baseline is cleaned;
-        // CI uploads the lint report so regressions stay visible.
-        abortOnError = false
-    }
+    // V-52: the BLD-FX-10 suppression is gone — lint keeps its default
+    // abortOnError = true, so lint errors are fatal in local/CI builds
+    // that run the lint task as a gate. (The CI workflow's lint step is
+    // report-only via continue-on-error, so this does not gate releases.)
 
     packaging {
         resources.excludes.add("META-INF/INDEX.LIST")

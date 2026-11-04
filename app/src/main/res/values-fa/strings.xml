@@ -36,6 +36,7 @@
     <string name="home_stat_traffic">ترافیک این نشست: %1$s</string>
     <string name="home_speed_format">\u2193 %1$s/s \u00B7 \u2191 %2$s/s</string>
     <string name="home_ping_format">پینگ: %1$d میلی‌ثانیه</string>
+    <string name="home_server_format">سرور: %1$s:%2$d</string>
     <string name="home_exit_ip_format">IP خروجی: %1$s (%2$s)</string>
     <string name="home_your_ip_format">IP شما: %1$s</string>
     <string name="home_nav_locations">موقعیت‌ها</string>
@@ -101,6 +102,8 @@
     <string name="theme_dark">تیره</string>
     <string name="settings_dns_resolver">حل‌کننده (DNS پروکسی محلی)</string>
     <string name="settings_dns_picker_title">حل‌کننده DNS</string>
+    <string name="dns_provider_default">پیش‌فرض</string>
+    <string name="dns_provider_custom">DoH سفارشی</string>
     <string name="settings_custom_doh">نشانی DoH سفارشی</string>
     <string name="settings_not_set">تنظیم نشده</string>
     <string name="settings_socks_bind">آدرس اتصال SOCKS5</string>

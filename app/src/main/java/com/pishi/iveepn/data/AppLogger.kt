@@ -55,9 +55,17 @@ object AppLogger {
     // to logcat: first character of the local part and of the domain
     // survive, e.g. "a***@e***.com". Runs only on messages containing
     // '@', and allocates nothing for the common no-email case.
-    private val EMAIL_PATTERN = Regex("""([A-Za-z0-9])[\w.%+-]*@([A-Za-z0-9])[\w.-]*\.([A-Za-z]{2,})""")
+    //
+    // V-20: the first character of each part may be ANY non-space,
+    // non-'@' character — the old pattern required an alphanumeric
+    // start, so unusual-but-valid shapes (local parts starting with
+    // '.' or '-', quoted local parts) slipped through unmasked.
+    // Plus-addressing, subdomains and short TLDs are covered by the
+    // permissive middle sections; a dotted letter TLD is still required
+    // so non-email "user@host" strings are left alone.
+    private val EMAIL_PATTERN = Regex("""([^\s@])[^@\s]*@([^\s@])[^\s@]*\.([A-Za-z]{2,})""")
 
-    private fun maskEmails(message: String): String {
+    internal fun maskEmails(message: String): String {
         if ('@' !in message) return message
         return EMAIL_PATTERN.replace(message) { match ->
             "${match.groupValues[1]}***@${match.groupValues[2]}***.${match.groupValues[3]}"

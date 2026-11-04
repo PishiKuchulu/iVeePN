@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -46,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -61,6 +63,7 @@ import com.pishi.iveepn.data.model.VeePNLocation
 import com.pishi.iveepn.data.model.emojiFlag
 import com.pishi.iveepn.ui.UiErrors
 import com.pishi.iveepn.ui.theme.Spacing
+import kotlinx.coroutines.delay
 
 /**
  * Locations for F-02/F-14: locations from the VeePN API with a Free / All
@@ -84,6 +87,14 @@ fun LocationsScreen(
     var optimalRegion by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
+    // V-09: the filter runs on a debounced copy of the query (~300 ms) so
+    // typing stays instant and the ~185-row list is not re-filtered on
+    // every keystroke.
+    var debouncedQuery by remember { mutableStateOf("") }
+    LaunchedEffect(query) {
+        delay(300)
+        debouncedQuery = query
+    }
     var reloadKey by remember { mutableIntStateOf(0) }
 
     val currentSelection by app.selectedLocationStore.selectedLocationFlow.collectAsState()
@@ -235,10 +246,10 @@ fun LocationsScreen(
                     else -> {
                         val source = if (tab == 0) free else all
                         val filtered = source.filter { loc ->
-                            query.isBlank() ||
-                                loc.name.contains(query, ignoreCase = true) ||
-                                loc.countryName.contains(query, ignoreCase = true) ||
-                                loc.region.contains(query, ignoreCase = true)
+                            debouncedQuery.isBlank() ||
+                                loc.name.contains(debouncedQuery, ignoreCase = true) ||
+                                loc.countryName.contains(debouncedQuery, ignoreCase = true) ||
+                                loc.region.contains(debouncedQuery, ignoreCase = true)
                         }.sortedBy { it.countryName }
 
                         if (filtered.isEmpty()) {
@@ -249,11 +260,11 @@ fun LocationsScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                             ) {
-                                if (query.isNotBlank()) {
+                                if (debouncedQuery.isNotBlank()) {
                                     Text(
                                         text = stringResource(
                                             R.string.locations_search_empty_title,
-                                            query,
+                                            debouncedQuery,
                                         ),
                                         style = MaterialTheme.typography.titleMedium,
                                     )
@@ -293,7 +304,15 @@ fun LocationsScreen(
                                 }
                             }
                         } else {
+                            // V-64: scrolling the results dismisses the
+                            // software keyboard so it stops covering the list.
+                            val listState = rememberLazyListState()
+                            val keyboardController = LocalSoftwareKeyboardController.current
+                            LaunchedEffect(listState.isScrollInProgress) {
+                                if (listState.isScrollInProgress) keyboardController?.hide()
+                            }
                             LazyColumn(
+                                state = listState,
                                 modifier = Modifier.fillMaxSize(),
                                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                                 contentPadding = PaddingValues(vertical = Spacing.sm),

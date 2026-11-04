@@ -94,6 +94,7 @@ fun HomeScreen(
     val lastError by IVeePNVpnService.lastError.collectAsState()
     val stats by IVeePNVpnService.vpnLiveStats.collectAsState()
     val pingMs by IVeePNVpnService.pingLatencyMs.collectAsState()
+    val endpoint by IVeePNVpnService.connectedEndpoint.collectAsState()
     val exitIp by IVeePNVpnService.vpnEdgeIp.collectAsState()
     val connectedAtEpochMs by IVeePNVpnService.connectedAtEpochMs.collectAsState()
     val selected by app.selectedLocationStore.selectedLocationFlow.collectAsState()
@@ -427,6 +428,21 @@ fun HomeScreen(
                             pingMs?.let {
                                 Text(
                                     text = stringResource(R.string.home_ping_format, it),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            // V-13 (partial): the current upstream server,
+                            // from the endpoint flow the service already
+                            // publishes. The pool's breaker state itself is
+                            // not exposed by ServerPool, so only the active
+                            // server is shown.
+                            endpoint?.let {
+                                Text(
+                                    text = stringResource(
+                                        R.string.home_server_format,
+                                        it.first,
+                                        it.second,
+                                    ),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
