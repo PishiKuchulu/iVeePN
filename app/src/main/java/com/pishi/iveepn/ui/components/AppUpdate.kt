@@ -513,7 +513,9 @@ fun AppUpdateDialog(controller: AppUpdateController) {
                             UpdateVersionCell(
                                 stringResource(R.string.update_new),
                                 "v${info.version}",
-                                MaterialTheme.colorScheme.primary,
+                                // secondary (deep teal): primary on this light
+                                // card is ~2.3:1, below WCAG AA for text.
+                                MaterialTheme.colorScheme.secondary,
                             )
                         }
                     }

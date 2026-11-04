@@ -1,6 +1,7 @@
 package com.pishi.iveepn.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.pishi.iveepn.ui.theme.ThemeMode
 import com.pishi.iveepn.vpn.IVeePNVpnService
 import com.pishi.iveepn.widget.QuickConnectWidgetProvider
@@ -138,6 +139,27 @@ class SettingsStore(context: Context) {
     var proxyOnlyMode: Boolean
         get() = prefs.getBoolean(KEY_PROXY_ONLY_MODE, false)
         set(value) { prefs.edit().putBoolean(KEY_PROXY_ONLY_MODE, value).apply() }
+
+    /**
+     * Observe proxy-only mode changes. The VPN service registers this so a
+     * mid-session toggle is applied by reconnecting, instead of silently
+     * waiting for the next manual connection. SharedPreferences keeps only
+     * a weak reference to listeners: the caller must retain the returned
+     * listener and pass it back to [removeProxyOnlyModeObserver].
+     */
+    fun addProxyOnlyModeObserver(
+        observer: (Boolean) -> Unit,
+    ): SharedPreferences.OnSharedPreferenceChangeListener {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_PROXY_ONLY_MODE) observer(proxyOnlyMode)
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return listener
+    }
+
+    fun removeProxyOnlyModeObserver(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+    }
 
     var excludedApps: Set<String>
         get() = prefs.getStringSet(KEY_EXCLUDED_APPS, emptySet())?.toSet() ?: emptySet()

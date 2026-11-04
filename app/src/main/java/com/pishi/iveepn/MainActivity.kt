@@ -33,12 +33,15 @@ class MainActivity : ComponentActivity() {
             requestNotificationPermissionIfNeeded()
             IVeePNVpnService.start(this)
         } else {
-
+            val message = getString(R.string.main_vpn_permission_denied)
             Toast.makeText(
                 this,
-                getString(R.string.main_vpn_permission_denied),
+                message,
                 Toast.LENGTH_LONG,
             ).show()
+            // A toast alone is gone in seconds; the same denial also lands
+            // on Home's persistent error card so the reason stays visible.
+            IVeePNVpnService.surfaceError(message)
         }
     }
 

@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
@@ -107,6 +108,8 @@ class IVeePNVpnService : VpnService() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+
+    private var proxyOnlyModeObserver: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
     @Volatile private var tunnelInterfaceActive = false
 
@@ -226,6 +229,8 @@ class IVeePNVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         statusLabel = s(R.string.notif_connecting)
+        proxyOnlyModeObserver = (applicationContext as IVeePNApp).settingsStore
+            .addProxyOnlyModeObserver { enabled -> onProxyOnlyModeChanged(enabled) }
         runCatching {
             val underlyingNetworks = NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -243,6 +248,12 @@ class IVeePNVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        proxyOnlyModeObserver?.let { observer ->
+            runCatching {
+                (applicationContext as IVeePNApp).settingsStore.removeProxyOnlyModeObserver(observer)
+            }
+        }
+        proxyOnlyModeObserver = null
         runCatching {
             getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback)
         }
@@ -362,6 +373,23 @@ class IVeePNVpnService : VpnService() {
                 }
             }
         }
+    }
+
+    /**
+     * A proxy-only toggle in Settings used to take effect only on the NEXT
+     * connection, so flipping it mid-session silently changed nothing.
+     * When the live session's effective mode differs from the new setting,
+     * rebuild the session in the new mode. (The effective mode can differ
+     * from the setting after a TUN failure fell back to proxy-only; in
+     * that case toggling the setting on is a no-op here, correctly.)
+     */
+    private fun onProxyOnlyModeChanged(enabled: Boolean) {
+        val state = _state.value
+        if (state != ConnectionState.CONNECTED && state != ConnectionState.CONNECTING) return
+        if (state == ConnectionState.CONNECTED && enabled == notificationProxyOnly) return
+        AppLogger.i(TAG, "proxy-only mode changed to $enabled during $state; reconnecting so it applies now")
+        requestDisconnect("proxy-only mode changed")
+        start(this)
     }
 
     private fun ensureGenerationCurrent(myGeneration: Int) {
@@ -953,6 +981,16 @@ class IVeePNVpnService : VpnService() {
                 .onFailure {
                     AppLogger.w(TAG, "could not deliver the disconnect intent; the service is not running", it)
                 }
+        }
+
+        /**
+         * Put a message on the Home screen's persistent error card from
+         * outside the service — e.g. MainActivity's denied VPN permission,
+         * where no session exists to carry the error. Cleared by the next
+         * connect attempt, like any service-raised error.
+         */
+        fun surfaceError(message: String) {
+            _lastError.value = message
         }
     }
 }
