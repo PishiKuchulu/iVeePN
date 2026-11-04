@@ -425,7 +425,7 @@ fun SettingsScreen(
             text = {
                 Column {
                     AppLanguage.entries.forEach { choice ->
-                        val select = {
+                        val select: () -> Unit = {
                             language = choice
                             settings.appLanguage = choice
                             showLanguagePicker = false
