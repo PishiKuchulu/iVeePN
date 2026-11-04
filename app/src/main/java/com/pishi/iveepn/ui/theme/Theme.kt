@@ -14,11 +14,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 /**
- * iVeePN theme — design direction #2 "Modern Premium": brand-derived
- * Material 3 schemes, Vazirmatn type scale and the shared shape/spacing
- * system. Layout direction is NOT overridden here: it follows the active
- * locale (the manifest declares supportsRtl), so Persian renders RTL and
- * English LTR from the same screens.
+ * iVeePN theme — "Soft UI": pale-grey page, white rounded cards and a
+ * bright teal accent (see Color.kt), Vazirmatn type scale and the shared
+ * shape/spacing system. Layout direction is NOT overridden here: it
+ * follows the active locale (the manifest declares supportsRtl), so
+ * Persian renders RTL and English LTR from the same screens.
  */
 @Composable
 fun IVeePNTheme(

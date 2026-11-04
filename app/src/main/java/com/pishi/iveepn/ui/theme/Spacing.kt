@@ -30,11 +30,14 @@ object Spacing {
     val contentMaxWidth: Dp = 520.dp
 }
 
-/** Rounded, card-forward shape scale: 20dp is the default card radius. */
+/**
+ * Soft UI shape scale: generously rounded at every step — 24dp is the
+ * default card radius (the medium slot), sheets and dialogs go to 32dp.
+ */
 val IVeePNShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    medium = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(28.dp),
+    extraLarge = RoundedCornerShape(32.dp),
 )

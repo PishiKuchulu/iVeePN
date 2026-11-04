@@ -64,10 +64,11 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 
 /**
- * Home — direction #2 "Modern Premium": a single centred column capped at
- * [Spacing.contentMaxWidth] with the power button as the only primary
- * action, semantic status colours, and contextual cards (update, proxy-only,
- * LAN exposure, location, live stats, error) around it.
+ * Home — "Soft UI": a single centred column capped at
+ * [Spacing.contentMaxWidth] on the pale-grey page, white rounded cards,
+ * the animated connect button as the only primary action, semantic status
+ * colours, and contextual cards (update, proxy-only, LAN exposure,
+ * location, live stats, error) around it.
  */
 @Composable
 fun HomeScreen(
@@ -303,6 +304,9 @@ fun HomeScreen(
 
                 Card(
                     onClick = onNavigateToServers,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = Spacing.touchTarget),
@@ -330,7 +334,12 @@ fun HomeScreen(
                 }
 
                 if (state == ConnectionState.CONNECTED) {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         Column(
                             modifier = Modifier.padding(Spacing.cardPadding),
                             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -384,7 +393,12 @@ fun HomeScreen(
                         }
                     }
                 } else if (state == ConnectionState.DISCONNECTED && directIp != null) {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         Text(
                             text = stringResource(R.string.home_your_ip_format, directIp!!),
                             style = MaterialTheme.typography.bodyMedium,

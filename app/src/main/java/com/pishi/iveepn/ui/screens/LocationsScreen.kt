@@ -1,5 +1,6 @@
 package com.pishi.iveepn.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,12 +31,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -121,6 +125,9 @@ fun LocationsScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.locations_title)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -152,9 +159,20 @@ fun LocationsScreen(
                         .fillMaxWidth()
                         .padding(vertical = Spacing.sm),
                     singleLine = true,
+                    shape = RoundedCornerShape(percent = 50),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    ),
                 )
 
-                TabRow(selectedTabIndex = tab) {
+                TabRow(
+                    selectedTabIndex = tab,
+                    containerColor = MaterialTheme.colorScheme.background,
+                    contentColor = MaterialTheme.colorScheme.secondary,
+                ) {
                     Tab(
                         selected = tab == 0,
                         onClick = { tab = 0 },
@@ -327,11 +345,19 @@ fun LocationsScreen(
                                         shape = MaterialTheme.shapes.medium,
                                         colors = CardDefaults.cardColors(
                                             containerColor = if (isSelected) {
-                                                MaterialTheme.colorScheme.secondaryContainer
+                                                MaterialTheme.colorScheme.primaryContainer
                                             } else {
-                                                MaterialTheme.colorScheme.surfaceContainerLow
+                                                MaterialTheme.colorScheme.surface
                                             },
                                         ),
+                                        border = if (isSelected) {
+                                            BorderStroke(
+                                                1.5.dp,
+                                                MaterialTheme.colorScheme.primary,
+                                            )
+                                        } else {
+                                            null
+                                        },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .semantics {
@@ -360,30 +386,48 @@ fun LocationsScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = "${loc.emojiFlag} " +
-                                                        "${loc.name.ifBlank { loc.region.uppercase() }}" +
-                                                        " — ${loc.countryName}",
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = if (selectable) {
-                                                        MaterialTheme.colorScheme.onSurface
-                                                    } else {
-                                                        MaterialTheme.colorScheme
-                                                            .onSurfaceVariant
-                                                    },
-                                                )
-                                                Text(
-                                                    text = stringResource(
-                                                        when {
-                                                            !loc.isFree ->
-                                                                R.string.locations_premium_note
-                                                            isOptimal ->
-                                                                R.string.locations_optimal
-                                                            else -> R.string.locations_free
+                                                Row(
+                                                    verticalAlignment = Alignment
+                                                        .CenterVertically,
+                                                    horizontalArrangement = Arrangement
+                                                        .spacedBy(Spacing.sm),
+                                                ) {
+                                                    Text(
+                                                        text = "${loc.emojiFlag} " +
+                                                            "${loc.name.ifBlank { loc.region.uppercase() }}" +
+                                                            " — ${loc.countryName}",
+                                                        style = MaterialTheme.typography
+                                                            .bodyLarge,
+                                                        color = if (selectable) {
+                                                            MaterialTheme.colorScheme
+                                                                .onSurface
+                                                        } else {
+                                                            MaterialTheme.colorScheme
+                                                                .onSurfaceVariant
                                                         },
-                                                    ),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                )
+                                                        modifier = Modifier.weight(
+                                                            1f,
+                                                            fill = false,
+                                                        ),
+                                                    )
+                                                    if (loc.isFree) {
+                                                        FreeChip()
+                                                    }
+                                                }
+                                                if (!loc.isFree || isOptimal) {
+                                                    Text(
+                                                        text = stringResource(
+                                                            if (!loc.isFree) {
+                                                                R.string
+                                                                    .locations_premium_note
+                                                            } else {
+                                                                R.string.locations_optimal
+                                                            },
+                                                        ),
+                                                        style = MaterialTheme.typography
+                                                            .bodySmall,
+                                                    )
+                                                }
                                             }
                                             if (isSelected) {
                                                 Icon(
@@ -403,6 +447,22 @@ fun LocationsScreen(
                 }
             }
         }
+    }
+}
+
+/** Small pale-teal pill marking a free location, as in the Soft UI design. */
+@Composable
+private fun FreeChip() {
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Text(
+            text = stringResource(R.string.locations_free),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        )
     }
 }
 
