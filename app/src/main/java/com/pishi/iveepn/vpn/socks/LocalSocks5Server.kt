@@ -7,6 +7,7 @@ import com.pishi.iveepn.vpn.upstream.UpstreamConnectRejectedException
 import com.pishi.iveepn.vpn.upstream.UpstreamConnectTimeoutException
 import com.pishi.iveepn.vpn.upstream.UpstreamHealthTracker
 import com.pishi.iveepn.vpn.upstream.UpstreamSession
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -93,6 +94,17 @@ class LocalSocks5Server(
 
     @Volatile private var unauthenticatedSession: UpstreamSession? = null
 
+    /**
+     * Set by [stop]: connection jobs blocked in a handshake cannot be
+     * interrupted (blocking socket IO outlives scope cancellation by up
+     * to the open-stream timeout), so when they finally fail they check
+     * this flag and stay silent instead of logging failures — and
+     * feeding the health tracker — under the NEXT session's lifetime
+     * (device log 2026-11-04: an NL server's failure surfaced during
+     * the FR session, an FR server's during the US session's tail).
+     */
+    @Volatile private var stopped = false
+
     private val health = UpstreamHealthTracker()
 
     private class RefusalRecord {
@@ -108,6 +120,7 @@ class LocalSocks5Server(
     }
 
     fun start() {
+        stopped = false
 
         val server = ServerSocket()
 
@@ -158,6 +171,7 @@ class LocalSocks5Server(
     }
 
     fun stop() {
+        stopped = true
         runCatching { serverSocket?.close() }
         AppLogger.i(TAG, "stopped local SOCKS5 proxy on $bindAddress:$port")
 
@@ -376,6 +390,17 @@ class LocalSocks5Server(
         if (tunneled == null) {
 
             val cause = tunnelResult.exceptionOrNull()
+
+            if (stopped || cause is CancellationException) {
+                // Teardown, not an upstream failure: this job was cancelled
+                // with the session (or outlived it inside a blocking
+                // handshake). Never count it as an upstream failure, never
+                // feed it to the health tracker, and never let it surface
+                // in the log as if a later session had failed.
+                runCatching { output.write(socksReply(0x01)) }
+                runCatching { output.flush() }
+                return
+            }
 
             val declinedByEdge = shouldRememberRefusal(cause)
             if (declinedByEdge) rememberUnreachable(targetKey, targetPort)

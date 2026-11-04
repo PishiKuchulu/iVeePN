@@ -3,6 +3,9 @@ package com.pishi.iveepn.vpn.upstream
 import com.pishi.iveepn.data.AppLogger
 import com.pishi.iveepn.data.VeePNApi
 import com.pishi.iveepn.data.model.VeePNServer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.net.SocketTimeoutException
 
@@ -85,12 +88,32 @@ class VeePNSession(
     /** Servers currently in rotation (empty before connect); used for the connected-endpoint ping. */
     fun currentServers(): List<VeePNServer> = pool?.currentServers().orEmpty()
 
+    /**
+     * Public exit IP through the pool, or null when undetermined.
+     *
+     * The probe deliberately goes through [ServerPool.open] — the same
+     * rotation, circuit breaker and credential refresh as real traffic.
+     * The previous implementation tunnelled only through the first
+     * server in the list, so one dead server failed the probe (and the
+     * Settings chain test built on it) while the pool was serving
+     * traffic through the remaining servers (device log 2026-11-04:
+     * region us-or carried a full session, then the chain test's
+     * exit-IP step failed).
+     *
+     * [ServerPool.open] is suspend and the probe API is blocking socket
+     * IO, so the pool call is bridged with runBlocking on the IO
+     * dispatcher; the probe was never cancellable mid-handshake anyway
+     * (blocking connects), and the pool caps it at MAX_ATTEMPTS tries.
+     */
     suspend fun probeExitIp(): String? {
         val activePool = pool
         if (activePool == null || closed) return null
-        val server = activePool.currentServers().firstOrNull() ?: return null
         return try {
-            VeePNUpstream.checkExitIp(server)
+            withContext(Dispatchers.IO) {
+                VeePNUpstream.checkExitIp { host, port ->
+                    runBlocking { activePool.open(host, port) }
+                }
+            }
         } catch (e: UpstreamError) {
             AppLogger.w(TAG, "Exit IP probe failed (${e.kind})")
             null

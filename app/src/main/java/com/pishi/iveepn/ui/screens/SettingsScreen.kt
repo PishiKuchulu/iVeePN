@@ -579,7 +579,10 @@ private suspend fun runChainStep(
     outcome.fold(
         onSuccess = { detail -> AppLogger.i(CHAIN_TAG, "✓ $name — $detail") },
         onFailure = { error ->
-            AppLogger.w(CHAIN_TAG, "✗ $name — ${error.message ?: error.javaClass.simpleName}", error)
+            // AppLogger.w appends ": <error.message>" itself when a
+            // throwable is passed; embedding the message here as well
+            // printed it twice in the log (device log 2026-11-04).
+            AppLogger.w(CHAIN_TAG, "✗ $name", error)
         },
     )
     return ChainStepResult(id, outcome.getOrNull(), outcome.exceptionOrNull())

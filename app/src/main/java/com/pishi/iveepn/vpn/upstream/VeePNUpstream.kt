@@ -196,16 +196,17 @@ object VeePNUpstream {
     }
 
     /**
-     * Fetch the public exit IP through a fresh tunnel to [server].
-     * Mirrors are tried in order for inner TLS/HTTP hiccups, but an
-     * [UpstreamError] from the tunnel itself aborts immediately: if the
-     * tunnel cannot be opened, another echo host will not help.
-     * Returns null when every mirror answered without a usable IP.
+     * Mirror-walk for the exit-IP probes: mirrors are tried in order for
+     * inner TLS/HTTP hiccups, but an [UpstreamError] from the tunnel
+     * itself aborts immediately: if the tunnel cannot be opened, another
+     * echo host will not help. Returns null when every mirror answered
+     * without a usable IP. Extracted (with [via] injected) so the walk
+     * semantics are unit-testable without a live tunnel.
      */
-    fun checkExitIp(server: VeePNServer): String? {
+    internal fun firstExitIp(via: (echoHost: String, path: String) -> String?): String? {
         for ((echoHost, path) in EXIT_IP_PROBES) {
             try {
-                val ip = exitIpVia(server, echoHost, path)
+                val ip = via(echoHost, path)
                 if (ip != null) return ip
                 // Tunnel opened but no IP in the answer: try the mirror.
             } catch (e: UpstreamError) {
@@ -217,8 +218,22 @@ object VeePNUpstream {
         return null
     }
 
-    private fun exitIpVia(server: VeePNServer, echoHost: String, path: String): String? {
-        val tunnel = openTlsConnect(server, echoHost, 443)
+    /**
+     * Fetch the public exit IP through tunnels opened by [openTunnel]
+     * (target host/port -> connected tunnel socket). The caller chooses
+     * the route: a single server, or the server pool so rotation, the
+     * circuit breaker and credential refresh apply to the probe exactly
+     * as they do to real traffic.
+     */
+    fun checkExitIp(openTunnel: (String, Int) -> Socket): String? =
+        firstExitIp { echoHost, path -> exitIpVia(openTunnel, echoHost, path) }
+
+    /** Fetch the public exit IP through a fresh tunnel to [server]. */
+    fun checkExitIp(server: VeePNServer): String? =
+        checkExitIp { host, port -> openTlsConnect(server, host, port) }
+
+    private fun exitIpVia(openTunnel: (String, Int) -> Socket, echoHost: String, path: String): String? {
+        val tunnel = openTunnel(echoHost, 443)
         var secure: Socket? = null
         try {
             // Inside the tunnel the client does TLS with the target itself;
