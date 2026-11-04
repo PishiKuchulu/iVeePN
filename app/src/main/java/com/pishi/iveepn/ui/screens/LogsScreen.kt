@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.annotation.StringRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -75,6 +76,7 @@ private suspend fun writeLogFile(context: Context): File = withContext(Dispatche
     file
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LogsScreen(onBack: () -> Unit) {
     val entries by AppLogger.entries.collectAsState()
