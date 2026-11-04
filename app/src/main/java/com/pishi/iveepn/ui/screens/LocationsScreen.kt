@@ -86,7 +86,7 @@ fun LocationsScreen(
     var query by remember { mutableStateOf("") }
     var reloadKey by remember { mutableIntStateOf(0) }
 
-    val selected by app.selectedLocationStore.selectedLocationFlow.collectAsState()
+    val currentSelection by app.selectedLocationStore.selectedLocationFlow.collectAsState()
     val selectedText = stringResource(R.string.locations_selected)
     val loadingText = stringResource(R.string.locations_loading)
 
@@ -301,9 +301,9 @@ fun LocationsScreen(
                                 items(filtered, key = { it.region + it.name }) { loc ->
                                     val isOptimal = loc.region == optimalRegion
                                     val selectable = loc.isFree
-                                    val isSelected = selected != null &&
-                                        selected!!.region == loc.region &&
-                                        selected!!.cityName == loc.name
+                                    val isSelected = currentSelection != null &&
+                                        currentSelection!!.region == loc.region &&
+                                        currentSelection!!.cityName == loc.name
                                     Card(
                                         shape = MaterialTheme.shapes.medium,
                                         colors = CardDefaults.cardColors(
