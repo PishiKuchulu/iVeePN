@@ -283,7 +283,7 @@ fun HomeScreen(
                     disconnectedSubtitle = stringResource(R.string.home_tap_to_connect),
                     connectingTitle = stringResource(R.string.status_connecting),
                     connectingSubtitle = stringResource(R.string.home_please_wait),
-                    stateDescription = statusText,
+                    stateDesc = statusText,
                 )
 
                 if (state == ConnectionState.CONNECTING) {

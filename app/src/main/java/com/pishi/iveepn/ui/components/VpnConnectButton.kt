@@ -86,16 +86,15 @@ fun VpnConnectButton(
     disconnectedSubtitle: String,
     connectingTitle: String,
     connectingSubtitle: String,
-    stateDescription: String,
+    stateDesc: String,
     modifier: Modifier = Modifier,
     size: Dp = 240.dp,
 ) {
     val animationsEnabled = rememberAnimationsEnabled()
     val haptics = LocalHapticFeedback.current
-    // Captured under a different name: inside the semantics {} block the
-    // receiver's own stateDescription property would be shadowed by the
-    // like-named parameter, and the assignment would hit the val.
-    val stateDesc = stateDescription
+    // The state parameter is named stateDesc (not stateDescription) so that
+    // inside the semantics {} block below, `stateDescription` still resolves
+    // to the receiver's settable property instead of a shadowing val.
 
     // Continuous 2.6 s loop driving the breathing, the sparkle rotation
     // and the liquid waves (frozen at 0 when animations are disabled).
