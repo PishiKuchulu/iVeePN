@@ -1,0 +1,147 @@
+name: Android Release (signed)
+
+# Builds the signed production release from the keystore held in GitHub
+# Secrets (never in the repo). Triggered by a version tag (v*) — the APK
+# is published as a GitHub Release for that tag — or manually, in which
+# case the APK is uploaded as a workflow artifact only.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  signed-release:
+    runs-on: ubuntu-latest
+    env:
+      SIGNING_STORE_PASSWORD: ${{ secrets.IVEEPN_SIGNING_STORE_PASSWORD }}
+      SIGNING_KEY_ALIAS: ${{ secrets.IVEEPN_SIGNING_KEY_ALIAS }}
+      SIGNING_KEY_PASSWORD: ${{ secrets.IVEEPN_SIGNING_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: "platform-tools"
+
+      - name: Install NDK
+        run: sdkmanager --install "ndk;26.1.10909125"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: "8.10.2"
+
+      # Same binary-asset regeneration as the other workflows: the wrapper
+      # jar and launcher icons are not pushed through the snapshot route.
+      - name: Regenerate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.10.2
+
+      - name: Generate launcher icons
+        run: |
+          base64 -d app/art/launcher-art.b64 > /tmp/launcher-art.png
+          cat > /tmp/GenIcons.java <<'JAVA_EOF'
+          import java.awt.Graphics2D;
+          import java.awt.RenderingHints;
+          import java.awt.image.BufferedImage;
+          import java.io.File;
+          import javax.imageio.ImageIO;
+          public class GenIcons {
+              static void write(BufferedImage src, int size, File out) throws Exception {
+                  BufferedImage dst = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+                  Graphics2D g = dst.createGraphics();
+                  g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                  g.drawImage(src, 0, 0, size, size, null);
+                  g.dispose();
+                  out.getParentFile().mkdirs();
+                  ImageIO.write(dst, "png", out);
+              }
+              public static void main(String[] args) throws Exception {
+                  BufferedImage src = ImageIO.read(new File("/tmp/launcher-art.png"));
+                  String base = "app/src/main/res/mipmap-";
+                  String[][] legacy = {{"mdpi", "48"}, {"hdpi", "72"}, {"xhdpi", "96"}, {"xxhdpi", "144"}, {"xxxhdpi", "192"}};
+                  String[][] fg = {{"mdpi", "108"}, {"hdpi", "162"}, {"xhdpi", "216"}, {"xxhdpi", "324"}, {"xxxhdpi", "432"}};
+                  for (String[] sp : legacy) {
+                      int size = Integer.parseInt(sp[1]);
+                      write(src, size, new File(base + sp[0] + "/ic_launcher.png"));
+                      write(src, size, new File(base + sp[0] + "/ic_launcher_round.png"));
+                  }
+                  for (String[] sp : fg) {
+                      write(src, Integer.parseInt(sp[1]), new File(base + sp[0] + "/ic_launcher_foreground.png"));
+                  }
+              }
+          }
+          JAVA_EOF
+          java -Djava.awt.headless=true /tmp/GenIcons.java
+
+      - name: Fetch Vazirmatn fonts (v33.003)
+        run: |
+          mkdir -p app/src/main/res/font
+          cd app/src/main/res/font
+          curl -fsSL -o vazirmatn_regular.ttf https://github.com/rastikerdar/vazirmatn/raw/v33.003/fonts/ttf/Vazirmatn-Regular.ttf
+          curl -fsSL -o vazirmatn_medium.ttf https://github.com/rastikerdar/vazirmatn/raw/v33.003/fonts/ttf/Vazirmatn-Medium.ttf
+          curl -fsSL -o vazirmatn_bold.ttf https://github.com/rastikerdar/vazirmatn/raw/v33.003/fonts/ttf/Vazirmatn-Bold.ttf
+          printf '%s  %s\n' b69fd4c680b8f3f225feabcc655a2c585d97627b8f5f5c0f9985e894069f3a56 vazirmatn_regular.ttf | sha256sum -c -
+          printf '%s  %s\n' b986623e4ddef10755e04be39f8ea7bcb1dc08bfe8dd0aa6af395736f256ad4a vazirmatn_medium.ttf | sha256sum -c -
+          printf '%s  %s\n' f635fdbea28f265de395ba83b4b1570dcf2f58d13c65469e61903b1c2d2ae723 vazirmatn_bold.ttf | sha256sum -c -
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Decode the release keystore from secrets
+        env:
+          IVEEPN_KEYSTORE_BASE64: ${{ secrets.IVEEPN_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$IVEEPN_KEYSTORE_BASE64" ]; then
+            echo "::error::IVEEPN_KEYSTORE_BASE64 secret is not set"
+            exit 1
+          fi
+          printf '%s' "$IVEEPN_KEYSTORE_BASE64" | base64 -d > release-keystore.p12
+          ls -l release-keystore.p12
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Assemble signed release APK
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify the signature and name the APK
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          APK="iVeePN-${VERSION}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
+          grep -q "50:28:5E:75:52:53:26:6B:14:7E:42:45:AF:B9:FE:E6:67:FC:09:30:E3:18:11:26:8A:19:41:C3:35:D6:2B:93" /tmp/certs.txt
+          sha256sum "$APK" > "$APK.sha256"
+          ls -l "$APK" "$APK.sha256"
+
+      - name: Upload the signed APK as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iveepn-signed-release
+          path: |
+            iVeePN-*.apk
+            iVeePN-*.apk.sha256
+          if-no-files-found: error
+
+      - name: Publish the GitHub Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: iVeePN ${{ github.ref_name }}
+          body: |
+            Signed production release of iVeePN ${{ github.ref_name }}.
+            Signed with the iVeePN release key (cert SHA-256 50285E75…2B93);
+            installs as an upgrade over previous signed releases.
+          files: |
+            iVeePN-*.apk
+            iVeePN-*.apk.sha256
