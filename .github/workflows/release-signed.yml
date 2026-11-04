@@ -120,7 +120,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "$APK"
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
-          grep -q "50:28:5E:75:52:53:26:6B:14:7E:42:45:AF:B9:FE:E6:67:FC:09:30:E3:18:11:26:8A:19:41:C3:35:D6:2B:93" /tmp/certs.txt
+          grep -q "50285e755253266b147e4245afb9fee667fc0930e31811268a1941c335d62b93" /tmp/certs.txt
           sha256sum "$APK" > "$APK.sha256"
           ls -l "$APK" "$APK.sha256"
 
