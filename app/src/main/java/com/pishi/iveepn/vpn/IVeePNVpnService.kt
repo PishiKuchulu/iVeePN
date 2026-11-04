@@ -585,6 +585,12 @@ class IVeePNVpnService : VpnService() {
                         val cc = app.selectedLocationStore.load()?.countryCode.orEmpty()
                         _vpnEdgeIp.value = IpLocationInfo(ip, cc)
                         AppLogger.i(TAG, "exit check: observed exit ip=$ip")
+                        // A successful probe is direct proof the session
+                        // carries traffic; clear any failure evidence the
+                        // SOCKS health tracker collected before it ran, so
+                        // a proven session is not redialed on stale counts
+                        // (device log 2026-11-04, region fr-prs).
+                        socksServer?.noteUpstreamReachable()
                     }
                 }
             }

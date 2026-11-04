@@ -19,12 +19,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.DataInputStream
 import java.io.EOFException
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -50,6 +52,8 @@ private const val ACCEPT_ERROR_BACKOFF_MS = 100L
 private const val RELAY_BUFFER_BYTES = 32 * 1024
 
 private const val FAILURE_SUMMARY_INTERVAL_MS = 15_000L
+
+private const val TIMEOUT_TARGET_TTL_MS = 20_000L
 
 private const val UNREACHABLE_TARGET_TTL_MS = 30_000L
 
@@ -106,6 +110,21 @@ class LocalSocks5Server(
     @Volatile private var stopped = false
 
     private val health = UpstreamHealthTracker()
+
+    /**
+     * Last upstream session this server actually used. The service swaps
+     * sessions on redial while this server (and its health tracker)
+     * lives on, so a swap must reset the tracker: failures recorded
+     * against the dead session must not convict its replacement, and
+     * the replacement gets its own warm-up (see UpstreamHealthTracker).
+     */
+    @Volatile private var lastSeenSession: UpstreamSession? = null
+
+    /** Targets whose last open attempt timed out, with expiry stamps. */
+    private val timedOutTargets = object : LinkedHashMap<String, Long>(64, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean =
+            size > UNREACHABLE_TARGET_CACHE_CAP
+    }
 
     private class RefusalRecord {
 
@@ -233,10 +252,26 @@ class LocalSocks5Server(
         val deadline = System.currentTimeMillis() + SESSION_WAIT_TIMEOUT_MS
         while (true) {
             val session = sessionProvider()
-            if (session != null && session.isConnected) return session
+            if (session != null && session.isConnected) {
+                if (session !== lastSeenSession) {
+                    lastSeenSession = session
+                    health.reset()
+                }
+                return session
+            }
             if (System.currentTimeMillis() >= deadline) return null
             delay(SESSION_WAIT_POLL_INTERVAL_MS)
         }
+    }
+
+    /**
+     * Direct evidence that the upstream carried traffic end to end (the
+     * service's exit-IP probe succeeded through the pool). Fed into the
+     * health tracker as a success so a proven session is not convicted
+     * by failures recorded before the probe ran.
+     */
+    fun noteUpstreamReachable() {
+        health.observeSuccess()
     }
 
     private fun recordUpstreamFailure(target: String, cause: Throwable?, declinedByEdge: Boolean = false) {
@@ -364,6 +399,19 @@ class LocalSocks5Server(
             return
         }
 
+        if (isRecentlyTimedOut(targetKey)) {
+            cachedRefusalRejections.incrementAndGet()
+            AppLogger.d(
+                TAG,
+                "refusing $targetKey: it timed out through every pool attempt moments ago; " +
+                    "refusing on-device for a short window instead of burning another " +
+                    "handshake slot and a full open timeout on the same dead destination",
+            )
+            output.write(socksReply(0x04))
+            output.flush()
+            return
+        }
+
         val session = awaitUsableSession()
         if (session == null) {
             output.write(socksReply(0x05)) 
@@ -404,6 +452,7 @@ class LocalSocks5Server(
 
             val declinedByEdge = shouldRememberRefusal(cause)
             if (declinedByEdge) rememberUnreachable(targetKey, targetPort)
+            if (isSilenceTimeout(cause)) rememberTimedOut(targetKey)
 
             recordUpstreamFailure(targetKey, cause, declinedByEdge = declinedByEdge)
 
@@ -443,6 +492,7 @@ class LocalSocks5Server(
         health.observeSuccess()
 
         forgetUnreachable(targetKey)
+        forgetTimedOut(targetKey)
 
         if (unauthenticatedSession != null && session !== unauthenticatedSession) {
             unauthenticatedSession = null
@@ -647,6 +697,37 @@ class LocalSocks5Server(
                 AppLogger.d(TAG, "$key succeeded; clearing its refusal backoff")
             }
         }
+    }
+
+    /**
+     * Same silence classification as the health tracker: the open died
+     * without an answer (the 30s cap expired, or the pool reported a
+     * connect timeout). Such a target has already consumed up to three
+     * pool attempts; apps that retry it every few seconds (device log
+     * 2026-11-04: the same two destinations failing in every region for
+     * minutes) would otherwise keep burning handshake slots and full
+     * open timeouts for the whole session.
+     */
+    private fun isSilenceTimeout(cause: Throwable?): Boolean = when (cause) {
+        null -> true
+        is UpstreamConnectTimeoutException -> true
+        is SocketTimeoutException -> true
+        is InterruptedIOException -> true
+        else -> false
+    }
+
+    private fun rememberTimedOut(key: String) {
+        synchronized(timedOutTargets) {
+            timedOutTargets[key] = System.currentTimeMillis() + TIMEOUT_TARGET_TTL_MS
+        }
+    }
+
+    private fun isRecentlyTimedOut(key: String): Boolean = synchronized(timedOutTargets) {
+        (timedOutTargets[key] ?: 0L) > System.currentTimeMillis()
+    }
+
+    private fun forgetTimedOut(key: String) {
+        synchronized(timedOutTargets) { timedOutTargets.remove(key) }
     }
 
     private fun socksReply(
