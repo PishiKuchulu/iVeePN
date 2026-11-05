@@ -95,11 +95,14 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
 
+      - name: Read the app version
+        run: echo "APP_VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_ENV"
+
       - name: Name the APK for the release
-        run: cp app/build/outputs/apk/debug/app-debug.apk iVeePN-1.0.0-debug.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk "iVeePN-${APP_VERSION}-debug.apk"
 
       - name: Publish to rolling latest release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: latest
           name: iVeePN latest (debug)
@@ -107,4 +110,4 @@ jobs:
             Rolling debug build of iVeePN from the latest commit on main.
             Debug signing — for testing only, not a store release.
           prerelease: true
-          files: iVeePN-1.0.0-debug.apk
+          files: iVeePN-${{ env.APP_VERSION }}-debug.apk
