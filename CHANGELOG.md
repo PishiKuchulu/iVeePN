@@ -1,5 +1,17 @@
 # Changelog
 
+## iVeePN 1.0.5 (versionCode 6) — in-app updater fix
+
+- The in-app updater never offered an update: its release selection
+  required the asset name `iVeePN-v<version>.apk`, while the signed
+  workflow has always published `iVeePN-<version>.apk` (no "v"), so
+  every check concluded "up to date". Selection now matches the real
+  published name, the selection tests use the real asset names, and a
+  regression test pins the exact shape of the published v1.0.4
+  release. Note: builds up to 1.0.4 contain the broken selection, so
+  1.0.5 itself must be installed manually once; in-app updates work
+  from 1.0.5 onward.
+
 ## iVeePN 1.0.4 (versionCode 5) — launcher icon margin
 
 - The launcher mark now sits at 54% of the foreground canvas height

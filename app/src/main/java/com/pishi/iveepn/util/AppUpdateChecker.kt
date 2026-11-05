@@ -99,10 +99,12 @@ object AppUpdateChecker {
      * Pure selection logic (unit-tested): among the strict `vX.Y.Z`
      * releases newer than [currentVersion] (drafts and prereleases
      * excluded), pick the highest version that carries the canonical
-     * `iVeePN-v<version>.apk` asset. An arbitrary `.apk` asset of any
-     * other name no longer counts: accepting one
-     * would let any APK attached to a release be offered as an update.
-     * Old Windows-only tags have no such asset and are skipped.
+     * `iVeePN-<version>.apk` asset — the exact name the signed-release
+     * workflow publishes (the tag carries the "v", the asset does not).
+     * An arbitrary `.apk` asset of any other name no longer counts:
+     * accepting one would let any APK attached to a release be offered
+     * as an update. Old Windows-only tags have no such asset and are
+     * skipped.
      */
     fun selectUpdate(releases: List<GhRelease>, currentVersion: String): UpdateInfo? =
         releases.asSequence()
@@ -111,7 +113,7 @@ object AppUpdateChecker {
             .sortedWith { a, b -> VersionNumbers.compare(b.tagName, a.tagName) }
             .mapNotNull { release ->
                 val version = release.tagName.removePrefix("v")
-                val asset = release.assets.firstOrNull { it.name == "iVeePN-v$version.apk" }
+                val asset = release.assets.firstOrNull { it.name == "iVeePN-$version.apk" }
                 asset?.let {
                     UpdateInfo(
                         version,
