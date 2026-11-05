@@ -79,7 +79,7 @@ tunnels this device's traffic through VeePN's HTTPS proxy servers.
 
 ## Status
 
-Version 1.0.3 — the protocol layer (P0/P1) is implemented and statically
+Version 1.0.4 — the protocol layer (P0/P1) is implemented and statically
 verified; the first CI build and the live on-device chain test are the
 next gates. See [CHANGELOG.md](CHANGELOG.md).
 
@@ -144,6 +144,6 @@ HTTPS ‏VeePN تونل می‌کند.
 
 ### وضعیت
 
-نسخه 1.0.3 — لایه پروتکل (P0/P1) پیاده‌سازی و به‌صورت استاتیک
+نسخه 1.0.4 — لایه پروتکل (P0/P1) پیاده‌سازی و به‌صورت استاتیک
 راستی‌آزمایی شده است؛ اولین بیلد CI و تست زنده زنجیره روی دستگاه،
 گام‌های بعدی‌اند. ببینید: [CHANGELOG.md](CHANGELOG.md).

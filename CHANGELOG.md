@@ -1,5 +1,12 @@
 # Changelog
 
+## iVeePN 1.0.4 (versionCode 5) — launcher icon margin
+
+- The launcher mark now sits at 54% of the foreground canvas height
+  (down from 64%), with even margins on all sides, so the full shield
+  stays clearly visible inside circle, squircle and square launcher
+  masks.
+
 ## iVeePN 1.0.3 (versionCode 4) — audit-4 fix wave
 
 Fixes from the fourth external code review, verified against source
