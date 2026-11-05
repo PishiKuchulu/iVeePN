@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.Socket
 
 /**
@@ -27,7 +28,10 @@ fun cooldownSecondsForStreak(streak: Int): Long {
  * - At most [MAX_ATTEMPTS] servers are tried per [open].
  * - A failure grows the server's streak and (re)arms its cooldown.
  * - 401/403 (credentials) triggers a throttled refresh: [refreshServers]
- *   replaces the list, clears the breaker and fires [onRefresh].
+ *   replaces the list, clears the breaker and fires [onRefresh]. The
+ *   refresh runs under a [REFRESH_TIMEOUT_MS] cap so a client waiting on
+ *   [open] is blocked by it for at most that long, then proceeds with
+ *   the current server list.
  * - 429 earns a 0.5s breather before rotating to the next server.
  * - Upstream handshakes are capped at [MAX_PARALLEL] in flight so a
  *   burst of client connections cannot trip the upstream rate limit.
@@ -73,7 +77,7 @@ class ServerPool(
                 when {
                     e.kind == ConnectFailureKind.CREDENTIALS ||
                         e.statusCode == 401 || e.statusCode == 403 ->
-                        maybeRefreshCredentials()
+                        withTimeoutOrNull(REFRESH_TIMEOUT_MS) { maybeRefreshCredentials() }
                     e.kind == ConnectFailureKind.ROTATE || e.statusCode == 429 ->
                         delay(ROTATE_BREATHER_MS)
                 }
@@ -171,6 +175,7 @@ class ServerPool(
         const val MAX_ATTEMPTS = 3
         const val MAX_PARALLEL = 8
         const val REFRESH_MIN_INTERVAL_MS = 90_000L
+        const val REFRESH_TIMEOUT_MS = 15_000L
         const val ROTATE_BREATHER_MS = 500L
     }
 }

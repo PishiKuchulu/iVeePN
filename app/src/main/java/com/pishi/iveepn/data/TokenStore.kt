@@ -6,20 +6,20 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.util.UUID
 
-/** Cached guest access token (F-01/F-17). */
+/** Cached guest access token. */
 data class GuestToken(
     val access: String,
     val fetchedAtMs: Long,
 )
 
-/** Cached per-region server list (F-03). */
+/** Cached per-region server list. */
 data class CachedServerList(
     val servers: List<VeePNServer>,
     val fetchedAtMs: Long,
 )
 
 /**
- * Secure store for the VeePN guest session (F-17): the stable install id,
+ * Secure store for the VeePN guest session: the stable install id,
  * the guest access token, the reserve-domain cache and per-region server
  * lists. Backed by EncryptedSharedPreferences via
  * [createEncryptedPrefsWithRecovery], which fails closed to a session-only
@@ -29,13 +29,17 @@ class TokenStore(context: Context) {
 
     private val prefs = createEncryptedPrefsWithRecovery(context, "iveepn_tokens")
 
+    private val udidLock = Any()
+
     /** Stable per-install UUID, generated once (sent to VeePN at launch). */
     val udid: String
-        get() {
-            prefs.getString(KEY_UDID, null)?.takeIf { it.isNotBlank() }?.let { return it }
+        get() = synchronized(udidLock) {
+            // Guarded so two racing threads can never generate two UUIDs.
+            prefs.getString(KEY_UDID, null)?.takeIf { it.isNotBlank() }
+                ?.let { return@synchronized it }
             val fresh = UUID.randomUUID().toString()
             prefs.edit().putString(KEY_UDID, fresh).apply()
-            return fresh
+            fresh
         }
 
     fun guestToken(): GuestToken? {

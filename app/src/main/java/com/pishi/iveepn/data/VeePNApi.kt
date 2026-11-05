@@ -7,17 +7,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
@@ -29,9 +32,10 @@ class ApiError(val status: Int, val payload: String?) : IOException(
 /**
  * The ONE strict validator for VeePN API base domains (desktop lesson:
  * exactly one implementation, used for defaults, reserve domains and any
- * cached value alike). https only, sane hostname, optional port 1..65535.
- * The guest token is sent to every domain in the rotation, so nothing
- * unvalidated may ever enter it. Pure Kotlin — no Android imports.
+ * cached value alike). https only, sane NAMED hostname, optional port
+ * 1..65535. IP literals and localhost are rejected: the guest token is
+ * sent to every domain in the rotation, so nothing unvalidated may ever
+ * enter it. Pure Kotlin — no Android imports, no DNS resolution.
  */
 object ApiDomainValidator {
     private val pattern = Regex(
@@ -42,13 +46,67 @@ object ApiDomainValidator {
         val u = candidate.trim().trimEnd('/')
         if (!pattern.matches(u)) return false
         val rest = u.removePrefix("https://")
+        val host = rest.substringBefore(':')
+        // Named hosts only: an IP literal (v4 or v6, in ANY range —
+        // loopback, private, link-local, multicast or public) or a
+        // localhost name must never enter the rotation.
+        if (isIpLiteral(host)) return false
+        if (host.equals("localhost", ignoreCase = true) ||
+            host.endsWith(".localhost", ignoreCase = true)
+        ) {
+            return false
+        }
         if (':' in rest) {
             val port = rest.substringAfterLast(':').toIntOrNull() ?: return false
             if (port !in 1..65535) return false
         }
         return true
     }
+
+    private fun isIpLiteral(host: String): Boolean {
+        // IPv6 forms, bracketed or bare. The shape pattern above already
+        // excludes them; this is an explicit guard for defence in depth.
+        if (host.startsWith("[") || ':' in host) return true
+        return parseIpv4Octets(host) != null
+    }
+
+    /**
+     * Dotted-quad IPv4 parse accepting the decimal, 0x-hex and 0-octal
+     * part forms URL parsers understand; returns the four octets or null
+     * when [host] is not an IPv4 literal. Pure string work — no DNS.
+     */
+    private fun parseIpv4Octets(host: String): IntArray? {
+        val parts = host.split('.')
+        if (parts.size != 4) return null
+        val octets = IntArray(4)
+        for ((index, part) in parts.withIndex()) {
+            if (part.isEmpty() || part.length > 10) return null
+            val value = when {
+                part.startsWith("0x") || part.startsWith("0X") ->
+                    part.substring(2).toIntOrNull(16)
+                part.length > 1 && part.startsWith("0") ->
+                    part.toIntOrNull(8)
+                else -> part.toIntOrNull()
+            } ?: return null
+            if (value !in 0..255) return null
+            octets[index] = value
+        }
+        return octets
+    }
 }
+
+/**
+ * String content of a JSON element, or null when the element is not a
+ * primitive. Safe replacement for `element.jsonPrimitive`, which throws
+ * when the element is an object or array: one malformed field in a
+ * backend response must not break the whole call.
+ */
+private fun JsonElement?.stringOrNull(): String? =
+    (this as? JsonPrimitive)?.contentOrNull
+
+/** Int value of a JSON element, or null when it is not a numeric primitive. */
+private fun JsonElement?.intValueOrNull(): Int? =
+    (this as? JsonPrimitive)?.intOrNull
 
 /**
  * Parser for POST /v3/server/list/ responses. Returns only usable entries
@@ -62,20 +120,25 @@ object VeePNServerListParser {
         val root = runCatching { json.parseToJsonElement(body) }.getOrNull() ?: return emptyList()
         val array = root as? JsonArray ?: return emptyList()
         return array.mapNotNull { element ->
-            val obj = element as? JsonObject ?: return@mapNotNull null
-            val addresses = (obj["addresses"] as? JsonArray)
-                ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.trim() }
-                ?.filter { it.isNotEmpty() }
-                .orEmpty()
-            val port = obj["port"]?.jsonPrimitive?.intOrNull ?: 0
-            if (addresses.isEmpty() || port !in 1..65535) return@mapNotNull null
-            VeePNServer(
-                addresses = addresses,
-                port = port,
-                username = obj["username"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                password = obj["password"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            )
+            // One malformed entry is skipped, never fatal to the list.
+            runCatching { parseEntry(element) }.getOrNull()
         }
+    }
+
+    private fun parseEntry(element: JsonElement): VeePNServer? {
+        val obj = element as? JsonObject ?: return null
+        val addresses = (obj["addresses"] as? JsonArray)
+            ?.mapNotNull { it.stringOrNull()?.trim() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
+        val port = obj["port"].intValueOrNull() ?: 0
+        if (addresses.isEmpty() || port !in 1..65535) return null
+        return VeePNServer(
+            addresses = addresses,
+            port = port,
+            username = obj["username"].stringOrNull().orEmpty(),
+            password = obj["password"].stringOrNull().orEmpty(),
+        )
     }
 }
 
@@ -86,7 +149,7 @@ data class LocationsResult(
 )
 
 /**
- * Client for the VeePN free-extension backend (F-01..F-03), a behaviour
+ * Client for the VeePN free-extension backend, a behaviour
  * port of the desktop reference client: domain rotation over the default
  * domains plus validated reserve domains from two public buckets, a guest
  * token from POST /v3/launch/, locations, and per-region server lists.
@@ -103,9 +166,15 @@ class VeePNApi(
     @Volatile
     private var domainsCache: List<String>? = null
 
+    @Volatile
+    private var domainsCacheAtMs: Long = 0L
+
+    @Volatile
+    private var domainsCacheTtlMs: Long = 0L
+
     // ------------------------------------------------------------ token
 
-    /** Guest access token, cached with a 7-day soft TTL (F-01). */
+    /** Guest access token, cached with a 7-day soft TTL. */
     suspend fun ensureToken(force: Boolean = false): String = withContext(Dispatchers.IO) {
         val cached = store.guestToken()
         val now = System.currentTimeMillis()
@@ -130,7 +199,7 @@ class VeePNApi(
             }
             if (response.code == 200) {
                 val access = parseJsonObject(response.text)?.get("access")
-                    ?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    .stringOrNull()?.takeIf { it.isNotBlank() }
                 if (access != null) {
                     store.saveGuestToken(access, System.currentTimeMillis())
                     AppLogger.i(TAG, "Guest token acquired via $domain")
@@ -149,21 +218,24 @@ class VeePNApi(
 
     // ------------------------------------------------------------ locations
 
-    /** All locations plus the free subset (proxyType == 0) (F-02). */
+    /** All locations plus the free subset (proxyType == 0). */
     suspend fun locations(): LocationsResult = withContext(Dispatchers.IO) {
         val text = request(LOCATIONS_PATH, "GET", null, auth = true)
         val root = parseJsonObject(text)
         val array = root?.get("locations") as? JsonArray ?: return@withContext LocationsResult(emptyList(), emptyList())
         val all = array.mapNotNull { element ->
-            val obj = element as? JsonObject ?: return@mapNotNull null
-            val region = obj["region"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
-            VeePNLocation(
-                region = region,
-                name = obj["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                countryCode = obj["countryCode"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                proxyType = obj["proxyType"]?.jsonPrimitive?.intOrNull ?: -1,
-            )
+            // One malformed entry is skipped, never fatal to the list.
+            runCatching {
+                val obj = element as? JsonObject ?: return@mapNotNull null
+                val region = obj["region"].stringOrNull()?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+                VeePNLocation(
+                    region = region,
+                    name = obj["name"].stringOrNull().orEmpty(),
+                    countryCode = obj["countryCode"].stringOrNull().orEmpty(),
+                    proxyType = obj["proxyType"].intValueOrNull() ?: -1,
+                )
+            }.getOrNull()
         }
         LocationsResult(all = all, free = all.filter { it.proxyType == 0 })
     }
@@ -172,20 +244,20 @@ class VeePNApi(
     suspend fun optimalLocation(): VeePNLocation? = withContext(Dispatchers.IO) {
         val text = request(OPTIMAL_PATH, "GET", null, auth = true)
         val obj = parseJsonObject(text) ?: return@withContext null
-        val region = obj["region"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        val region = obj["region"].stringOrNull()?.takeIf { it.isNotBlank() }
             ?: return@withContext null
         VeePNLocation(
             region = region,
-            name = obj["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            countryCode = obj["countryCode"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            proxyType = obj["proxyType"]?.jsonPrimitive?.intOrNull ?: 0,
+            name = obj["name"].stringOrNull().orEmpty(),
+            countryCode = obj["countryCode"].stringOrNull().orEmpty(),
+            proxyType = obj["proxyType"].intValueOrNull() ?: 0,
         )
     }
 
     // ------------------------------------------------------------ server list
 
     /**
-     * Usable servers for [region] (F-03), cached 12h per region. A fresh
+     * Usable servers for [region], cached 12h per region. A fresh
      * response that parses to zero usable servers is an error and is never
      * cached.
      */
@@ -206,50 +278,32 @@ class VeePNApi(
             servers
         }
 
-    // ------------------------------------------------------------ ip check
-
-    /** Public IP via the reference's echo mirrors, 6s each (direct, no tunnel). */
-    suspend fun checkIpDirect(): String? = withContext(Dispatchers.IO) {
-        val echoClient = client.newBuilder()
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .readTimeout(6, TimeUnit.SECONDS)
-            .build()
-        for (mirror in IP_ECHO_MIRRORS) {
-            try {
-                val response = http(mirror, "GET", null, authToken = null, echoClient)
-                if (response.code != 200) continue
-                val obj = parseJsonObject(response.text)
-                val ip = obj?.get("ip")?.jsonPrimitive?.contentOrNull
-                if (!ip.isNullOrBlank()) return@withContext ip.trim()
-                val match = IPV4_REGEX.find(response.text)
-                if (match != null) return@withContext match.groupValues[1]
-            } catch (e: IOException) {
-                continue
-            }
-        }
-        null
-    }
-
     // ------------------------------------------------------------ internals
 
     /**
-     * Authed request with domain rotation: 401/403 invalidates the token and
-     * retries once with a fresh one; 429/5xx backs off and rotates; other
-     * 4xx surfaces as [ApiError]; network errors rotate. Bounded by
-     * [MAX_DOMAIN_ATTEMPTS] and the 120s wall budget.
+     * Authed request with domain rotation: the first 401/403 invalidates
+     * the token and forces a fresh one for the single next attempt; a
+     * second rejection only records the error and rotation continues.
+     * 429/5xx backs off and rotates; other 4xx surfaces as [ApiError];
+     * network errors rotate. Bounded by [MAX_DOMAIN_ATTEMPTS] and the
+     * 120s wall budget.
      */
     private suspend fun request(path: String, method: String, body: String?, auth: Boolean): String {
         val domains = getDomains()
         val deadline = System.nanoTime() + REQUEST_BUDGET_MS * 1_000_000L
         var lastError = "unknown"
         var tokenRefreshed = false
+        var forceFreshToken = false
         val attempts = minOf(domains.size, MAX_DOMAIN_ATTEMPTS)
         for (attempt in 0 until attempts) {
             if (attempt > 0 && System.nanoTime() > deadline) {
                 lastError += " (request budget exhausted)"
                 break
             }
-            val token = if (auth) ensureToken(force = tokenRefreshed) else null
+            val token = if (auth) ensureToken(force = forceFreshToken) else null
+            // Consume-once: the forced refresh covers only the attempt
+            // immediately after the rejection that requested it.
+            forceFreshToken = false
             val domain = domains[attempt % domains.size]
             val response = try {
                 http(domain + path, method, body, token, client)
@@ -260,10 +314,16 @@ class VeePNApi(
             }
             when {
                 response.code in 200..299 -> return response.text
-                auth && (response.code == 401 || response.code == 403) && !tokenRefreshed -> {
-                    tokenRefreshed = true
-                    store.clearGuestToken()
+                auth && (response.code == 401 || response.code == 403) -> {
                     lastError = "HTTP ${response.code} from $domain (token rejected)"
+                    if (!tokenRefreshed) {
+                        tokenRefreshed = true
+                        forceFreshToken = true
+                        store.clearGuestToken()
+                    }
+                    // A second rejection (the fresh token was already
+                    // tried) does not abort the rotation: the error is
+                    // recorded above and the loop moves to the next domain.
                 }
                 response.code == 429 || response.code >= 500 -> {
                     lastError = "HTTP ${response.code} from $domain"
@@ -276,12 +336,21 @@ class VeePNApi(
     }
 
     /**
-     * Default domains + validated reserve domains. Reserve cache lasts 24h;
-     * an empty fetch is never cached and a stale cache is reused when the
-     * fetch fails.
+     * Default domains + validated reserve domains. The persistent reserve
+     * cache lasts 24h; an empty fetch is never cached there and a stale
+     * cache is reused when the fetch fails. The in-memory cache carries a
+     * timestamp: a full result lives 24h, but a defaults-only result (the
+     * reserve fetch failed or returned empty) expires after 5 minutes so
+     * a later call retries the fetch instead of pinning the short list
+     * for the whole process lifetime.
      */
     private suspend fun getDomains(): List<String> {
-        domainsCache?.let { return it }
+        val cachedDomains = domainsCache
+        if (cachedDomains != null &&
+            System.currentTimeMillis() - domainsCacheAtMs < domainsCacheTtlMs
+        ) {
+            return cachedDomains
+        }
         val domains = DEFAULT_FREE_DOMAINS.toMutableList()
         val now = System.currentTimeMillis()
         val cached = store.cachedReserveDomains()
@@ -298,12 +367,19 @@ class VeePNApi(
                 cached?.first ?: emptyList()
             }
         }
+        val reserveIncluded = extra.isNotEmpty()
         for (candidate in extra) {
             val clean = candidate.trim().trimEnd('/')
             if (ApiDomainValidator.isValid(clean) && clean !in domains) domains.add(clean)
         }
         val result = domains.toList()
         domainsCache = result
+        domainsCacheAtMs = System.currentTimeMillis()
+        domainsCacheTtlMs = if (reserveIncluded) {
+            RESERVE_CACHE_TTL_MS
+        } else {
+            DOMAINS_DEFAULTS_ONLY_TTL_MS
+        }
         return result
     }
 
@@ -320,15 +396,15 @@ class VeePNApi(
                 val root = parseJsonObject(response.text) ?: continue
                 val domainsObj = root["domains"] as? JsonObject
                 (domainsObj?.get("free") as? JsonArray)?.forEach { element ->
-                    val url = element.jsonPrimitive.contentOrNull
+                    val url = element.stringOrNull()
                     if (url != null && ApiDomainValidator.isValid(url)) found.add(url.trim().trimEnd('/'))
                 }
                 when (val free = root["free"]) {
-                    is kotlinx.serialization.json.JsonPrimitive ->
+                    is JsonPrimitive ->
                         free.contentOrNull?.takeIf { ApiDomainValidator.isValid(it) }
                             ?.let { found.add(it.trim().trimEnd('/')) }
                     is JsonArray -> free.forEach { element ->
-                        val url = element.jsonPrimitive.contentOrNull
+                        val url = element.stringOrNull()
                         if (url != null && ApiDomainValidator.isValid(url)) {
                             found.add(url.trim().trimEnd('/'))
                         }
@@ -349,7 +425,7 @@ class VeePNApi(
             append("\"udid\":").append(jsonString(store.udid)).append(',')
             append("\"appVersion\":").append(jsonString(APP_VERSION)).append(',')
             append("\"platform\":\"chrome\",")
-            append("\"platformVersion\":").append(jsonString(USER_AGENT)).append(',')
+            append("\"platformVersion\":").append(jsonString(UserAgent.VALUE)).append(',')
             append("\"timeZone\":").append(jsonString(tz)).append(',')
             append("\"deviceName\":").append(jsonString(DEVICE_NAME))
             append('}')
@@ -362,14 +438,36 @@ class VeePNApi(
         val builder = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", UserAgent.VALUE)
         if (authToken != null) builder.header("Authorization", "Bearer $authToken")
         if (method == "POST") {
             builder.post((body ?: "{}").toRequestBody(JSON_MEDIA))
         }
         return httpClient.newCall(builder.build()).execute().use { response ->
-            HttpResult(response.code, response.body?.string().orEmpty())
+            HttpResult(response.code, readBodyCapped(response.body?.byteStream()))
         }
+    }
+
+    /**
+     * Read a response body with a hard size cap: the API domains are not
+     * fully trusted (reserve domains come from public buckets), so an
+     * unbounded body must never be loaded into memory.
+     */
+    private fun readBodyCapped(stream: InputStream?): String {
+        if (stream == null) return ""
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(8 * 1024)
+        stream.use { input ->
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (out.size() + read > MAX_RESPONSE_BODY_BYTES) {
+                    throw IOException("Response body exceeds $MAX_RESPONSE_BODY_BYTES bytes")
+                }
+                out.write(buffer, 0, read)
+            }
+        }
+        return out.toString(Charsets.UTF_8.name())
     }
 
     private fun parseJsonObject(text: String): JsonObject? =
@@ -386,9 +484,6 @@ class VeePNApi(
 
         const val APP_VERSION = "5.0.2"
         const val DEVICE_NAME = "Chrome 130"
-        const val USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
         val DEFAULT_FREE_DOMAINS = listOf(
             "https://antpeak.com",
@@ -412,14 +507,9 @@ class VeePNApi(
         const val SERVERS_CACHE_TTL_MS = 12L * 3600 * 1000
         const val TOKEN_SOFT_TTL_MS = 7L * 24 * 3600 * 1000
         const val RESERVE_CACHE_TTL_MS = 24L * 3600 * 1000
+        const val DOMAINS_DEFAULTS_ONLY_TTL_MS = 5L * 60 * 1000
+        const val MAX_RESPONSE_BODY_BYTES = 1024 * 1024
         val BACKOFF_SECONDS = listOf(1L, 2L, 4L, 8L, 10L)
-
-        val IP_ECHO_MIRRORS = listOf(
-            "https://api.ipify.org?format=json",
-            "https://ifconfig.me/ip",
-            "https://api.seeip.org/jsonip",
-            "https://ipinfo.io/json",
-        )
 
         private const val LAUNCH_PATH = "/v3/launch/"
         private const val LOCATIONS_PATH = "/v3/location/extension/"
@@ -427,7 +517,6 @@ class VeePNApi(
         private const val SERVER_LIST_PATH = "/v3/server/list/"
 
         private val JSON_MEDIA = "application/json".toMediaType()
-        private val IPV4_REGEX = Regex("""\b(\d{1,3}(?:\.\d{1,3}){3})\b""")
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(API_TIMEOUT_SECONDS, TimeUnit.SECONDS)

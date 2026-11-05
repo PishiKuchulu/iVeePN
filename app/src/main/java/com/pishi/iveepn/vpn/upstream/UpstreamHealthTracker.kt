@@ -23,7 +23,7 @@ class UpstreamHealthTracker(
      * seconds are dominated by the connection burst: every app on the
      * phone reconnects at once, the pool's handshake slots saturate,
      * and the 30s open cap makes dozens of those attempts expire in the
-     * same second — on healthy servers too (device log 2026-11-04:
+     * same second — on healthy servers too (observed on device:
      * region fr-prs proved itself with a successful exit-IP probe and
      * was still declared unhealthy ~30s after connect, and the forced
      * redial then made everything worse). Silence failures inside the

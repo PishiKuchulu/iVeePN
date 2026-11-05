@@ -118,6 +118,7 @@
     <string name="excluded_search_label">جستجوی برنامه</string>
     <string name="excluded_loading">در حال بارگذاری برنامه‌ها\u2026</string>
     <string name="excluded_empty">برنامه‌ای با جستجوی شما هم‌خوان نیست.</string>
+    <string name="settings_split_tunnel_visibility_note">فقط برنامه‌هایی که آیکون لانچر دارند فهرست می‌شوند (محدودیت مشاهده‌پذیری بسته‌ها در اندروید).</string>
     <string name="settings_version">نسخه</string>
     <string name="settings_logs">گزارش‌ها</string>
     <string name="settings_app_update">به‌روزرسانی برنامه</string>
@@ -208,4 +209,5 @@
 
     <!-- MainActivity -->
     <string name="main_vpn_permission_denied">iVeePN برای تونل‌کردن ترافیک این دستگاه به مجوز VPN اندروید نیاز دارد. حالت فقط پروکسی در تنظیمات بدون این مجوز کار می‌کند.</string>
+    <string name="main_notification_permission_denied">مجوز اعلان رد شد — ممکن است اعلان‌های وضعیت اتصال نمایش داده نشوند.</string>
 </resources>

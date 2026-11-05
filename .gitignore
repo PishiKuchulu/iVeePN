@@ -16,7 +16,9 @@ keystore.properties
 app/src/main/jni/
 
 # --- VPeeN Android hygiene (added at import) ---
-# PFP governance is private methodology: never in this repo, in any form
+# PFP governance/methodology documents are private and never enter this
+# repo, in any form. The single deliberate exception is
+# PFP_PRODUCTION_COMPLIANCE.json: a compliance receipt, not methodology.
 PFP.md
 AGENTS.md
 pfp/

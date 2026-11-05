@@ -1,5 +1,6 @@
 package com.pishi.iveepn.vpn.upstream
 
+import com.pishi.iveepn.data.UserAgent
 import com.pishi.iveepn.data.model.VeePNServer
 import java.io.IOException
 import java.io.InputStream
@@ -59,14 +60,16 @@ object ConnectRequest {
     }
 
     /**
-     * A target host must never carry whitespace or CR/LF: it is written
-     * verbatim into the request line and the Host header, so either would
-     * allow request smuggling into the CONNECT head.
+     * A target host must never carry whitespace or control characters:
+     * it is written verbatim into the request line and the Host header,
+     * so any of them would allow request smuggling into the CONNECT
+     * head. Rejects every character at or below the space character
+     * (space, tab, CR, LF and the other C0 controls) plus DEL.
      */
     fun requireSanitisedHost(host: String) {
         require(host.isNotEmpty()) { "Target host is empty" }
-        require(host.none { it == ' ' || it == '\r' || it == '\n' }) {
-            "Target host contains whitespace or CR/LF"
+        require(host.none { it <= ' ' || it == '\u007F' }) {
+            "Target host contains whitespace or control characters"
         }
     }
 
@@ -104,13 +107,9 @@ object ConnectRequest {
  */
 object VeePNUpstream {
 
-    /** Chrome 130 user agent, identical to the desktop client. */
-    const val USER_AGENT: String =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-
     private const val MAX_HEAD_BYTES = 16 * 1024
     private const val MAX_HEAD_LINES = 64
+    private const val ADDRESS_BUDGET_MS = 20_000L
     private const val MAX_EXIT_IP_BYTES = 1024 * 1024
     private const val EXIT_IP_READ_TIMEOUT_MS = 10_000
 
@@ -142,11 +141,19 @@ object VeePNUpstream {
             throw UpstreamError(ConnectFailureKind.GENERAL, "Malformed server entry")
         }
         var lastFailure: Exception? = null
+        // The sequential per-address attempts share one overall budget so
+        // a server with many dead addresses cannot stall the caller.
+        val deadlineNanos = System.nanoTime() + ADDRESS_BUDGET_MS * 1_000_000L
         for (address in server.addresses) {
+            val remainingMs = (deadlineNanos - System.nanoTime()) / 1_000_000L
+            if (remainingMs <= 0) break
+            val attemptTimeoutMs = minOf(connectTimeoutMs.toLong(), remainingMs)
+                .coerceAtLeast(1)
+                .toInt()
             var socket: Socket? = null
             try {
-                socket = openTlsSocket(address, server.port, connectTimeoutMs)
-                val request = ConnectRequest.build(server, targetHost, targetPort, USER_AGENT)
+                socket = openTlsSocket(address, server.port, attemptTimeoutMs)
+                val request = ConnectRequest.build(server, targetHost, targetPort, UserAgent.VALUE)
                 val out = socket.getOutputStream()
                 out.write(request.toByteArray(Charsets.ISO_8859_1))
                 out.flush()
@@ -157,12 +164,25 @@ object VeePNUpstream {
                 val statusCode = statusLine.split(' ').getOrNull(1)?.toIntOrNull()
                 // Consume the remaining response headers.
                 var lines = 0
+                var headTerminated = false
                 while (lines < MAX_HEAD_LINES) {
                     val line = readLineBounded(input) ?: break
-                    if (line.isEmpty()) break
+                    if (line.isEmpty()) {
+                        headTerminated = true
+                        break
+                    }
                     lines++
                 }
                 if (statusCode == 200) {
+                    if (!headTerminated) {
+                        // No terminating blank line: any unread header
+                        // bytes left in this deliberately unbuffered
+                        // stream would desync the tunnel, so the socket
+                        // must not be handed out.
+                        throw IOException(
+                            "Upstream CONNECT response head has no terminating blank line",
+                        )
+                    }
                     // The tunnel is a long-lived stream now; the handshake
                     // deadline must not apply to it.
                     runCatching { socket.soTimeout = 0 }
@@ -244,7 +264,7 @@ object VeePNUpstream {
             val request = buildString {
                 append("GET ").append(path).append(" HTTP/1.1\r\n")
                 append("Host: ").append(echoHost).append("\r\n")
-                append("User-Agent: ").append(USER_AGENT).append("\r\n")
+                append("User-Agent: ").append(UserAgent.VALUE).append("\r\n")
                 append("Accept: */*\r\n")
                 append("Connection: close\r\n")
                 append("\r\n")
@@ -291,20 +311,26 @@ object VeePNUpstream {
     }
 
     /**
-     * Layer TLS over [underlying] with certificate verification against the
-     * system trust store and SNI set to [host] (skipped for IP literals,
-     * which are not valid SNI values).
+     * Layer TLS over [underlying] with certificate verification against
+     * the system trust store. Hostname verification always runs with the
+     * HTTPS endpoint identification algorithm: the platform checks the
+     * certificate against [host] during the handshake — the SAN list for
+     * named hosts, the IP SAN for IP literals — instead of accepting any
+     * CA-valid certificate. SNI is set for named hosts only (IP literals
+     * are not valid SNI values). Both are in place before the handshake,
+     * which starts lazily on first use of the returned socket.
      */
     private fun wrapTls(underlying: Socket, host: String, port: Int): SSLSocket {
         val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
         val tls = factory.createSocket(underlying, host, port, true) as SSLSocket
+        val params = tls.sslParameters
+        params.endpointIdentificationAlgorithm = "HTTPS"
         if (!isIpLiteral(host)) {
             runCatching {
-                val params = tls.sslParameters
                 params.serverNames = listOf(SNIHostName(host))
-                tls.sslParameters = params
             }
         }
+        tls.sslParameters = params
         return tls
     }
 

@@ -29,7 +29,7 @@ class QuickConnectWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == ACTION_TOGGLE_VPN) {
-            // SEC-FX-02: this receiver is exported; only broadcasts carrying
+            // This receiver is exported; only broadcasts carrying
             // the per-install guard token (minted into our own PendingIntent)
             // may toggle the VPN. Foreign broadcasts are dropped.
             if (!WidgetToggleGuard.isAuthorized(context, intent.getStringExtra(WidgetToggleGuard.EXTRA_TOGGLE_TOKEN))) {

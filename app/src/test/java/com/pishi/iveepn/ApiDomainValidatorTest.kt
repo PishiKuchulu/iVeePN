@@ -72,4 +72,21 @@ class ApiDomainValidatorTest {
         assertFalse(ApiDomainValidator.isValid("https://antpeak.com:443/extra"))
         assertFalse(ApiDomainValidator.isValid("https://antpeak.com.evil.example/path"))
     }
+
+    @Test
+    fun rejectsIpLiteralHosts() {
+        assertFalse(ApiDomainValidator.isValid("https://127.0.0.1"))
+        assertFalse(ApiDomainValidator.isValid("https://127.0.0.1:8443"))
+        assertFalse(ApiDomainValidator.isValid("https://192.168.1.1"))
+        assertFalse(ApiDomainValidator.isValid("https://10.0.0.5"))
+        assertFalse(ApiDomainValidator.isValid("https://172.16.0.9"))
+    }
+
+    @Test
+    fun rejectsLocalhostAndIpv6Literals() {
+        assertFalse(ApiDomainValidator.isValid("https://localhost"))
+        assertFalse(ApiDomainValidator.isValid("https://localhost:8443"))
+        assertFalse(ApiDomainValidator.isValid("https://[::1]"))
+        assertFalse(ApiDomainValidator.isValid("https://[2001:db8::1]"))
+    }
 }

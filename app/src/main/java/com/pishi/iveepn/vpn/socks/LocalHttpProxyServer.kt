@@ -34,7 +34,7 @@ private const val SESSION_WAIT_TIMEOUT_MS = 4_000L
 private const val SESSION_WAIT_POLL_INTERVAL_MS = 100L
 private const val OPEN_STREAM_TIMEOUT_MS = 30_000L
 private const val HALF_CLOSE_DRAIN_TIMEOUT_MS = 2 * 60_000L
-// STB-FX-08: see LocalSocks5Server — 256 per server bounds relay threads.
+// See LocalSocks5Server — 256 per server bounds relay threads.
 private const val MAX_CONCURRENT_CLIENT_CONNECTIONS = 256
 private const val ACCEPT_BACKLOG = 256
 private const val ACCEPT_ERROR_BACKOFF_MS = 100L
@@ -77,12 +77,18 @@ class LocalHttpProxyServer(
 
     fun start() {
         val server = ServerSocket()
-        runCatching { server.reuseAddress = true }
-        server.bind(InetSocketAddress(InetAddress.getByName(bindAddress), port), ACCEPT_BACKLOG)
+        try {
+            runCatching { server.reuseAddress = true }
+            server.bind(InetSocketAddress(InetAddress.getByName(bindAddress), port), ACCEPT_BACKLOG)
+        } catch (failure: Exception) {
+            // A failed bind must not leak the listening socket.
+            runCatching { server.close() }
+            throw failure
+        }
         serverSocket = server
         AppLogger.i(TAG, "started local HTTP proxy on $bindAddress:$port")
         if (bindAddress != "127.0.0.1" && bindAddress != "::1") {
-            // SEC-FX-05: no authentication on this server either.
+            // No authentication on this server either.
             AppLogger.w(
                 TAG,
                 "HTTP proxy is bound to $bindAddress with NO authentication: any device on the " +

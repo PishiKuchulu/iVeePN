@@ -47,7 +47,13 @@ class MainActivity : ComponentActivity() {
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) {  }
+    ) { granted ->
+        if (!granted) {
+            // Silent denial left the user with no status notification
+            // and no explanation; surface it on Home's error card.
+            IVeePNVpnService.surfaceError(getString(R.string.main_notification_permission_denied))
+        }
+    }
 
     private fun requestConnect() {
         if ((application as IVeePNApp).settingsStore.proxyOnlyMode) {

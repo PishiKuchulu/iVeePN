@@ -4,7 +4,7 @@ import android.content.Context
 import java.util.UUID
 
 /**
- * SEC-FX-02: the widget provider is exported (Android requires it), so any
+ * The widget provider is exported (Android requires it), so any
  * installed app could previously broadcast ACTION_TOGGLE_VPN and start/stop
  * the user's VPN. The toggle intent now carries a per-install random token
  * that only this app can mint (it lives in the app's private preferences);

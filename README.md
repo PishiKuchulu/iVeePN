@@ -53,6 +53,16 @@ tunnels this device's traffic through VeePN's HTTPS proxy servers.
   EncryptedSharedPreferences (fail-closed: if encryption is unavailable,
   storage is session-only in memory, never plaintext on disk).
 - Server passwords and tokens are never written to the app log.
+- LAN and local-network destinations are deliberately **blocked**
+  through the tunnel: the local proxies refuse private-range,
+  link-local and loopback targets, and there is currently no option to
+  allow LAN access while connected.
+- The app excludes **itself** from its own VPN, so its own control
+  traffic runs outside the tunnel by design. This covers update checks
+  against GitHub, the reserve-domain fetches behind the API domain
+  rotation, and the real-IP check shown while disconnected — those
+  requests reach their services from your real IP address even while
+  the VPN is connected.
 
 ## Origins & credits
 
@@ -69,7 +79,7 @@ tunnels this device's traffic through VeePN's HTTPS proxy servers.
 
 ## Status
 
-Version 1.0.0 — the protocol layer (P0/P1) is implemented and statically
+Version 1.0.3 — the protocol layer (P0/P1) is implemented and statically
 verified; the first CI build and the live on-device chain test are the
 next gates. See [CHANGELOG.md](CHANGELOG.md).
 
@@ -134,6 +144,6 @@ HTTPS ‏VeePN تونل می‌کند.
 
 ### وضعیت
 
-نسخه 1.0.0 — لایه پروتکل (P0/P1) پیاده‌سازی و به‌صورت استاتیک
+نسخه 1.0.3 — لایه پروتکل (P0/P1) پیاده‌سازی و به‌صورت استاتیک
 راستی‌آزمایی شده است؛ اولین بیلد CI و تست زنده زنجیره روی دستگاه،
 گام‌های بعدی‌اند. ببینید: [CHANGELOG.md](CHANGELOG.md).

@@ -41,7 +41,7 @@ private const val HANDSHAKE_TIMEOUT_MS = 10_000
 
 private const val HALF_CLOSE_DRAIN_TIMEOUT_MS = 2 * 60_000L
 
-// STB-FX-08: 256 per server (SOCKS + HTTP) keeps worst-case relay threads
+// 256 per server (SOCKS + HTTP) keeps worst-case relay threads
 // inside RelayDispatchers' cap; ample for a single-device VPN.
 private const val MAX_CONCURRENT_CLIENT_CONNECTIONS = 256
 
@@ -104,8 +104,8 @@ class LocalSocks5Server(
      * to the open-stream timeout), so when they finally fail they check
      * this flag and stay silent instead of logging failures — and
      * feeding the health tracker — under the NEXT session's lifetime
-     * (device log 2026-11-04: an NL server's failure surfaced during
-     * the FR session, an FR server's during the US session's tail).
+     * (observed on device: one region's server failure surfacing
+     * during the following region's session).
      */
     @Volatile private var stopped = false
 
@@ -143,12 +143,18 @@ class LocalSocks5Server(
 
         val server = ServerSocket()
 
-        runCatching { server.reuseAddress = true }
-        server.bind(InetSocketAddress(InetAddress.getByName(bindAddress), port), ACCEPT_BACKLOG)
+        try {
+            runCatching { server.reuseAddress = true }
+            server.bind(InetSocketAddress(InetAddress.getByName(bindAddress), port), ACCEPT_BACKLOG)
+        } catch (failure: Exception) {
+            // A failed bind must not leak the listening socket.
+            runCatching { server.close() }
+            throw failure
+        }
         serverSocket = server
         AppLogger.i(TAG, "started local SOCKS5 proxy on $bindAddress:$port")
         if (bindAddress != "127.0.0.1" && bindAddress != "::1") {
-            // SEC-FX-05: this server has no authentication; a non-loopback
+            // This server has no authentication; a non-loopback
             // bind is an open proxy for the whole local network.
             AppLogger.w(
                 TAG,
@@ -194,7 +200,9 @@ class LocalSocks5Server(
         runCatching { serverSocket?.close() }
         AppLogger.i(TAG, "stopped local SOCKS5 proxy on $bindAddress:$port")
 
-        DohDnsClient.shutdown()
+        // The DoH client is a process-wide singleton shared by every
+        // relay instance and lazily rebuilt on next use; one server
+        // stopping must not tear it down for the others.
         scope.cancel()
         synchronized(unreachableTargets) { unreachableTargets.clear() }
         health.reset()
@@ -288,11 +296,26 @@ class LocalSocks5Server(
         if (!lastFailureSummaryAt.compareAndSet(since, now)) return
         val total = upstreamFailures.getAndSet(0)
         if (total <= 0) return
+        // The stored summary masks the destination: the log buffer is
+        // user-shareable (clipboard / exported file), and a list of
+        // visited targets is browsing history.
+        val maskedTarget = maskTargetKey(target)
         AppLogger.w(
             TAG,
             "$total connection(s) failed upstream in the last ${(now - since) / 1_000}s " +
-                "(most recent: $target -- ${cause?.message ?: "timed out"})",
+                "(most recent: $maskedTarget -- ${cause?.message ?: "timed out"})",
         )
+    }
+
+    /** Split a "host:port" target key and mask the host part. */
+    private fun maskTargetKey(target: String): String {
+        val splitAt = target.lastIndexOf(':')
+        val port = if (splitAt > 0) target.substring(splitAt + 1).toIntOrNull() else null
+        return if (port != null) {
+            AppLogger.maskTarget(target.substring(0, splitAt), port)
+        } else {
+            AppLogger.maskTarget(target)
+        }
     }
 
     private suspend fun handleClient(client: Socket) {
@@ -703,10 +726,10 @@ class LocalSocks5Server(
      * Same silence classification as the health tracker: the open died
      * without an answer (the 30s cap expired, or the pool reported a
      * connect timeout). Such a target has already consumed up to three
-     * pool attempts; apps that retry it every few seconds (device log
-     * 2026-11-04: the same two destinations failing in every region for
-     * minutes) would otherwise keep burning handshake slots and full
-     * open timeouts for the whole session.
+     * pool attempts; apps that retry it every few seconds (observed
+     * on device: the same two destinations failing in every region
+     * for minutes) would otherwise keep burning handshake slots and
+     * full open timeouts for the whole session.
      */
     private fun isSilenceTimeout(cause: Throwable?): Boolean = when (cause) {
         null -> true

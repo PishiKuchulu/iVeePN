@@ -4,8 +4,9 @@ import android.util.Log
 import com.pishi.iveepn.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.Executors
@@ -39,7 +40,10 @@ object AppLogger {
         Thread(runnable, "AppLogger-flush").apply { isDaemon = true }
     }
 
-    private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    // DateTimeFormatter is immutable and thread-safe, unlike the
+    // SimpleDateFormat this replaced (shared across the UI thread and
+    // the log-export IO paths).
+    private val timeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
 
     fun d(tag: String, message: String) {
         // Debug lines carry connection targets (host:port); they must
@@ -56,8 +60,8 @@ object AppLogger {
     // survive, e.g. "a***@e***.com". Runs only on messages containing
     // '@', and allocates nothing for the common no-email case.
     //
-    // V-20: the first character of each part may be ANY non-space,
-    // non-'@' character — the old pattern required an alphanumeric
+    // The first character of each part may be ANY non-space,
+    // non-'@' character — an earlier pattern required an alphanumeric
     // start, so unusual-but-valid shapes (local parts starting with
     // '.' or '-', quoted local parts) slipped through unmasked.
     // Plus-addressing, subdomains and short TLDs are covered by the
@@ -72,9 +76,53 @@ object AppLogger {
         }
     }
 
+    /**
+     * Mask an IP address for stored/logged output: an IPv4 address
+     * keeps its first two octets ("51.254.*.*"), an IPv6 address keeps
+     * its first two groups. Anything that is not an IP literal is
+     * returned unchanged (callers use [maskTarget] for hostnames).
+     */
+    fun maskIp(value: String): String {
+        val v = value.trim()
+        if (v.contains(':')) {
+            val groups = v.split(':')
+            return groups.take(2).joinToString(":") + "::*"
+        }
+        val parts = v.split('.')
+        val isIpv4 = parts.size == 4 && parts.all { part ->
+            part.isNotEmpty() && part.all { it.isDigit() } && (part.toIntOrNull() ?: -1) in 0..255
+        }
+        return if (isIpv4) "${parts[0]}.${parts[1]}.*.*" else v
+    }
+
+    /**
+     * Mask a connection target ("host:port") for stored/logged output:
+     * IP literals go through [maskIp]; a hostname collapses to
+     * "•••." + its last label (e.g. "•••.com"), so logs keep the shape
+     * of a destination without recording where the user actually went.
+     */
+    fun maskTarget(host: String, port: Int? = null): String {
+        val h = host.trim()
+        val isIpLiteral = h.contains(':') || h.split('.').let { parts ->
+            parts.size == 4 && parts.all { part ->
+                part.isNotEmpty() && part.all { it.isDigit() } && (part.toIntOrNull() ?: -1) in 0..255
+            }
+        }
+        val maskedHost = when {
+            isIpLiteral -> maskIp(h)
+            h.contains('.') -> "•••." + h.substringAfterLast('.')
+            else -> "•••"
+        }
+        return if (port != null) "$maskedHost:$port" else maskedHost
+    }
+
     fun i(tag: String, message: String) {
         val masked = maskEmails(message)
-        Log.i(tag, masked)
+        // Info lines routinely carry connection metadata (exit IP,
+        // region, session events). They stay in the in-app buffer, but
+        // they must not reach logcat in release builds, where any app
+        // with log access could read a browsing-adjacent trail.
+        if (BuildConfig.DEBUG) Log.i(tag, masked)
         log(LogLevel.INFO, tag, masked)
     }
 
@@ -136,7 +184,9 @@ object AppLogger {
     }
 
     fun exportAsText(): String = buffer.toList().joinToString("\n") { entry ->
-        val ts = timeFormat.format(Date(entry.timestampMillis))
+        val ts = Instant.ofEpochMilli(entry.timestampMillis)
+            .atZone(ZoneId.systemDefault())
+            .format(timeFormat)
         "$ts ${entry.level.name.padEnd(5)} [${entry.tag}] ${entry.message}"
     }
 }

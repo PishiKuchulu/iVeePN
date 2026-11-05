@@ -6,7 +6,7 @@
     "artifactHygiene": {
       "status": "PASS",
       "evidence": [
-        "No keystores, secrets or governance/methodology documents in the repo (verified by tree scan at P0/P1 delivery)",
+        "No keystores or secrets in the repo, and no PFP governance/methodology documents either (verified by tree scan at P0/P1 delivery); this compliance file is the single deliberate exception — a compliance receipt, not methodology",
         "No credentials in code; guest token and server passwords live only in EncryptedSharedPreferences at runtime"
       ]
     },

@@ -20,27 +20,19 @@ data class IpLocationInfo(
 class ExitCheck {
 
     suspend fun fetchDirectIpInfo(): Result<IpLocationInfo> = withContext(Dispatchers.IO) {
-        val client = OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
-            .callTimeout(8, TimeUnit.SECONDS)
-            .build()
-        try {
-            runCatching {
-                val request = Request.Builder().url(EXIT_CHECK_URL).build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) error("Direct IP check request failed: HTTP ${response.code}")
-                    parseTrace(response.body?.string().orEmpty())
-                }
+        // Shared client: this check runs on every disconnect, and building
+        // (then tearing down) a whole OkHttpClient per call is wasteful.
+        runCatching {
+            val request = Request.Builder().url(EXIT_CHECK_URL).build()
+            directClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) error("Direct IP check request failed: HTTP ${response.code}")
+                parseTrace(response.body?.string().orEmpty())
             }
-        } finally {
-            client.dispatcher.executorService.shutdown()
-            client.connectionPool.evictAll()
         }
     }
 
-    suspend fun fetchProxiedIpInfo(socksPort: Int): Result<IpLocationInfo> = withContext(Dispatchers.IO) {
-        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort))
+    suspend fun fetchProxiedIpInfo(socksPort: Int, socksHost: String = "127.0.0.1"): Result<IpLocationInfo> = withContext(Dispatchers.IO) {
+        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(socksHost, socksPort))
         val client = OkHttpClient.Builder()
             .proxy(proxy)
             .connectTimeout(EXIT_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -61,17 +53,13 @@ class ExitCheck {
         }
     }
 
-    suspend fun verifyExitCountry(socksPort: Int, expectedCountryCode: String?): Result<String> =
-        fetchProxiedIpInfo(socksPort).mapCatching { info ->
-            val actualCountry = info.countryCode
-            if (expectedCountryCode != null &&
-                !expectedCountryCode.equals("REC", ignoreCase = true) &&
-                !actualCountry.equals(expectedCountryCode, ignoreCase = true)
-            ) {
-                error("Exit country mismatch: expected $expectedCountryCode, got $actualCountry")
-            }
-            actualCountry
-        }
+    companion object {
+        private val directClient: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(8, TimeUnit.SECONDS)
+            .build()
+    }
 
     private fun parseTrace(body: String): IpLocationInfo {
         var ip = ""

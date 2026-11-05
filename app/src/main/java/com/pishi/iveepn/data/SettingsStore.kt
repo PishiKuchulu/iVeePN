@@ -3,8 +3,6 @@ package com.pishi.iveepn.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.pishi.iveepn.ui.theme.ThemeMode
-import com.pishi.iveepn.vpn.IVeePNVpnService
-import com.pishi.iveepn.widget.QuickConnectWidgetProvider
 
 class SettingsStore(context: Context) {
     private val appContext = context.applicationContext
@@ -22,7 +20,7 @@ class SettingsStore(context: Context) {
         } ?: ThemeMode.SYSTEM
         set(value) {
             prefs.edit().putString(KEY_THEME_MODE, value.name).apply()
-            QuickConnectWidgetProvider.updateAll(appContext, IVeePNVpnService.state.value)
+            onThemeModeChanged?.invoke()
         }
 
     /**
@@ -50,7 +48,7 @@ class SettingsStore(context: Context) {
         get() = prefs.getInt(KEY_CUSTOM_MTU, DEFAULT_MTU)
         set(value) { prefs.edit().putInt(KEY_CUSTOM_MTU, value.coerceIn(MIN_MTU, MAX_MTU)).apply() }
 
-    /** Region code of the location chosen on the Locations screen (F-02/F-03). */
+    /** Region code of the location chosen on the Locations screen. */
     var lastRegion: String
         get() = prefs.getString(KEY_LAST_REGION, DEFAULT_REGION) ?: DEFAULT_REGION
         set(value) {
@@ -59,12 +57,15 @@ class SettingsStore(context: Context) {
         }
 
     /**
-     * F-12: when the TUN interface cannot be established, fall back loudly to
-     * proxy-only mode (default) instead of dropping the session entirely.
-     * The fallback is always surfaced in the UI/logs, never silent.
+     * When the TUN interface cannot be established, fall back loudly to
+     * proxy-only mode instead of dropping the session entirely. The
+     * fallback is always surfaced in the UI/logs, never silent — and it
+     * is opt-in: the default is OFF, so a TUN failure (including the
+     * fail-closed IPv6 route refusal) fails the connect rather than
+     * silently leaving the device's traffic unprotected.
      */
     var tunFallbackToProxy: Boolean
-        get() = prefs.getBoolean(KEY_TUN_FALLBACK_TO_PROXY, true)
+        get() = prefs.getBoolean(KEY_TUN_FALLBACK_TO_PROXY, false)
         set(value) { prefs.edit().putBoolean(KEY_TUN_FALLBACK_TO_PROXY, value).apply() }
 
     // The device's real (pre-VPN) IP and country are sensitive location data;
@@ -100,7 +101,24 @@ class SettingsStore(context: Context) {
     var socksBindAddress: String
         get() = prefs.getString(KEY_SOCKS_BIND_ADDRESS, DEFAULT_SOCKS_BIND_ADDRESS) ?: DEFAULT_SOCKS_BIND_ADDRESS
         set(value) {
-            prefs.edit().putString(KEY_SOCKS_BIND_ADDRESS, value.ifBlank { DEFAULT_SOCKS_BIND_ADDRESS }).apply()
+            // Store-level guard (the UI validates too, but the store is
+            // the last line of defence): only a blank value (reset to the
+            // loopback default) or a strict numeric IP literal is
+            // accepted. Anything else — hostnames, malformed input — is
+            // rejected and the previous value kept, so a bad write can
+            // never expose the unauthenticated local proxies to the LAN
+            // or break the bind outright.
+            val trimmed = value.trim()
+            when {
+                trimmed.isBlank() ->
+                    prefs.edit().putString(KEY_SOCKS_BIND_ADDRESS, DEFAULT_SOCKS_BIND_ADDRESS).apply()
+                isValidIpAddress(trimmed) ->
+                    prefs.edit().putString(KEY_SOCKS_BIND_ADDRESS, trimmed).apply()
+                else -> AppLogger.w(
+                    TAG,
+                    "ignoring an invalid SOCKS bind address (not a numeric IP literal): $value",
+                )
+            }
         }
 
     var socksPort: Int
@@ -125,7 +143,10 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_CUSTOM_DOH_URL, "") ?: ""
         set(value) {
             val trimmed = value.trim()
-            if (trimmed.isNotEmpty() && !isValidDohUrl(trimmed)) return
+            if (trimmed.isNotEmpty() && !isValidDohUrl(trimmed)) {
+                AppLogger.w(TAG, "ignoring an invalid custom DoH URL: $trimmed")
+                return
+            }
             prefs.edit().putString(KEY_CUSTOM_DOH_URL, trimmed).apply()
         }
 
@@ -199,6 +220,16 @@ class SettingsStore(context: Context) {
     }
 
     companion object {
+        private const val TAG = "SettingsStore"
+
+        /**
+         * Hook invoked after the theme mode changes. Registered by the
+         * Application (which refreshes the home-screen widget) so this
+         * data-layer class does not depend on the vpn/widget layers.
+         */
+        @Volatile
+        var onThemeModeChanged: (() -> Unit)? = null
+
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_APP_LANGUAGE = "app_language"
         private const val KEY_EXIT_CHECK = "exit_check_enabled"
@@ -209,7 +240,7 @@ class SettingsStore(context: Context) {
         private const val KEY_CACHED_REAL_COUNTRY = "cached_real_country"
         const val DEFAULT_MTU = 1400
         const val MIN_MTU = 576
-        const val MAX_MTU = 9000
+        const val MAX_MTU = 1500
         const val DEFAULT_REGION = "nl"
         private const val KEY_SOCKS_BIND_ADDRESS = "socks_bind_address"
         private const val KEY_SOCKS_PORT = "socks_port"

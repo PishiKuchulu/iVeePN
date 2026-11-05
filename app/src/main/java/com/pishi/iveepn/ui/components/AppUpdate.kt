@@ -225,10 +225,23 @@ class AppUpdateController(private val appContext: Context) {
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.startActivity(intent)
+        // The verified APK has been handed to the installer; the cache
+        // copy is no longer needed and should not linger on disk.
+        runCatching { ready.file.delete() }
         dialogVisible = false
     }
 
     private fun downloadApk(info: UpdateInfo, onProgress: (Long, Long) -> Unit): File {
+        // Only ever download from the GitHub asset URL the API reported;
+        // redirects from there are followed by the HTTP client, but the
+        // initial host must be github.com itself.
+        val downloadHost = Uri.parse(info.downloadUrl).host
+        if (downloadHost != "github.com") {
+            error("Update download URL does not point at github.com; refusing to download")
+        }
+        // Hard cap on the download size: an update APK is a few MB, so a
+        // body streaming past the cap is not a legitimate update.
+        val maxDownloadBytes = 200L * 1024 * 1024
         val dir = File(appContext.cacheDir, "updates").apply { mkdirs() }
         val part = File(dir, info.assetName + ".part")
         val request = Request.Builder()
@@ -240,6 +253,9 @@ class AppUpdateController(private val appContext: Context) {
                 if (!response.isSuccessful) error("HTTP ${response.code}")
                 val body = response.body ?: error("Empty response")
                 val total = body.contentLength().takeIf { it > 0 } ?: info.sizeBytes
+                if (total > maxDownloadBytes) {
+                    error("Update download exceeds the $maxDownloadBytes-byte size limit")
+                }
                 body.byteStream().use { input ->
                     part.outputStream().use { output ->
                         val buffer = ByteArray(64 * 1024)
@@ -250,6 +266,9 @@ class AppUpdateController(private val appContext: Context) {
                             if (read == -1) break
                             output.write(buffer, 0, read)
                             downloaded += read
+                            if (downloaded > maxDownloadBytes) {
+                                error("Update download exceeds the $maxDownloadBytes-byte size limit")
+                            }
                             onProgress(downloaded, total)
                         }
                     }
@@ -260,11 +279,10 @@ class AppUpdateController(private val appContext: Context) {
             throw error
         }
         // Verify the download against the SHA-256 the GitHub API
-        // reported for this asset before it is offered to the installer
-        // (external review, A6). The digest is REQUIRED (wave-3 review,
-        // A-1): when the API omits it, verification used to be skipped
-        // entirely and the APK went to the installer unchecked. Now a
-        // missing digest fails the update closed.
+        // reported for this asset before it is offered to the installer.
+        // The digest is REQUIRED: when the API omits it, verification used
+        // to be skipped entirely and the APK went to the installer
+        // unchecked. Now a missing digest fails the update closed.
         val expected = info.sha256 ?: run {
             part.delete()
             error("Update metadata carries no SHA-256 digest for this asset; refusing to install an unverified APK")
@@ -284,7 +302,7 @@ class AppUpdateController(private val appContext: Context) {
             part.delete()
             error("Downloaded APK failed checksum verification (expected $expected, got $actual)")
         }
-        // Defense in depth (A-1): the downloaded APK's signing
+        // Defense in depth: the downloaded APK's signing
         // certificate must be the project's release certificate. The
         // package manager would reject a foreign signer at install time
         // anyway (an update must match the installed app's signer), but
@@ -304,10 +322,13 @@ class AppUpdateController(private val appContext: Context) {
 /**
  * SHA-256 fingerprint of the iVeePN release signing certificate (the
  * public fingerprint of the key every official release is signed with;
- * it appears in every shipped APK and is not a secret).
+ * it appears in every shipped APK and is not a secret). The signer gate
+ * in `.github/workflows/release-signed.yml` is the source of truth for
+ * this value: both must match, or the updater will reject the very APKs
+ * CI publishes (and CI will refuse to publish a mismatched build).
  */
 private const val RELEASE_CERT_SHA256 =
-    "f5381666261427b5f3c5345c79110c1aaede57b593b540d7aaa5ac481a340bee"
+    "50285e755253266b147e4245afb9fee667fc0930e31811268a1941c335d62b93"
 
 /** SHA-256 fingerprint of an APK file's signing certificate, or null. */
 private fun apkSignerSha256(context: android.content.Context, file: File): String? {

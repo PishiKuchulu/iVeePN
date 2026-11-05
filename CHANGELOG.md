@@ -1,5 +1,31 @@
 # Changelog
 
+## iVeePN 1.0.3 (versionCode 4) — audit-4 fix wave
+
+Fixes from the fourth external code review, verified against source
+before implementation:
+
+- The upstream TLS connection now performs hostname verification, not
+  just chain validation: named hosts are checked against the
+  certificate, and IP-literal endpoints require an IP SAN.
+- The in-app updater's expected signing-certificate fingerprint was
+  corrected to the iVeePN release key, so official signed releases are
+  no longer rejected by the updater's own signer check.
+- Falling back from TUN to proxy-only mode on tunnel failure now
+  defaults to **off**; the fallback happens only when the user enables
+  it in Settings.
+- API hardening: token refresh is no longer forced on every retry, a
+  second 401/403 no longer aborts the whole domain rotation, the
+  reserve-domain cache honours its TTL, IP-literal and private-range
+  API domains are rejected, JSON parsing is defensive, and response
+  bodies are size-capped.
+- Log privacy: connection destinations and the exit IP are masked in
+  the app log instead of being recorded verbatim.
+- CI/release hardening: signing secrets are scoped to the steps that
+  need them, unit tests run before the keystore is decoded, the decoded
+  keystore is removed at the end of the job, actions are pinned by
+  commit, and the rolling debug APK name follows the app version.
+
 ## iVeePN 1.0.0 (versionCode 1) — P0/P1: guest-mode VeePN client
 
 First iVeePN release line. The app was re-based on the iFoxy Android

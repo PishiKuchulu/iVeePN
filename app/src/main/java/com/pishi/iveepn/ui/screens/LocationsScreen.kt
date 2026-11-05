@@ -70,7 +70,7 @@ import com.pishi.iveepn.ui.theme.Spacing
 import kotlinx.coroutines.delay
 
 /**
- * Locations for F-02/F-14: locations from the VeePN API with a Free / All
+ * Locations from the VeePN API with a Free / All
  * tab split (free = proxyType 0), search, and selection that persists the
  * region for the next dial. Premium locations are visible in the All tab
  * but cannot be selected in guest mode. The currently selected location is

@@ -78,8 +78,8 @@ android {
         applicationId = "com.pishi.iveepn"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.3"
 
         externalNativeBuild {
             ndkBuild {
@@ -158,7 +158,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3:1.4.0-alpha10")
+    // Version managed by the Compose BOM above (no explicit pin).
+    implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.navigation:navigation-compose:2.8.5")
@@ -170,6 +171,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // security-crypto 1.1.0-alpha07 is the newest published release of
+    // this library and no stable successor exists yet, so the alpha pin
+    // here is deliberate.
     implementation("androidx.security:security-crypto:1.1.0-alpha07")
 
 

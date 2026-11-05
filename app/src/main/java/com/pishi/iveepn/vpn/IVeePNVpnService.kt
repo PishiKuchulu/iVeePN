@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.atomic.AtomicInteger
 
 data class VpnLiveStats(
     val txRateBytesPerSec: Long = 0L,
@@ -98,13 +99,13 @@ class IVeePNVpnService : VpnService() {
 
     private val opMutex = Mutex()
 
-    private var tunFd: ParcelFileDescriptor? = null
-    private var socksServer: LocalSocks5Server? = null
-    private var httpProxyServer: LocalHttpProxyServer? = null
-    private var upstreamSession: UpstreamSession? = null
-    private var connectJob: Job? = null
-    private var watchdogJob: Job? = null
-    private var speedJob: Job? = null
+    @Volatile private var tunFd: ParcelFileDescriptor? = null
+    @Volatile private var socksServer: LocalSocks5Server? = null
+    @Volatile private var httpProxyServer: LocalHttpProxyServer? = null
+    @Volatile private var upstreamSession: UpstreamSession? = null
+    @Volatile private var connectJob: Job? = null
+    @Volatile private var watchdogJob: Job? = null
+    @Volatile private var speedJob: Job? = null
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -136,8 +137,10 @@ class IVeePNVpnService : VpnService() {
         val isEmpty: Boolean get() = tunFd == null && socksServer == null && httpProxyServer == null && upstreamSession == null
     }
 
-    @Volatile
-    private var connectionGeneration = 0
+    // Incremented by the main thread, IO coroutines and network
+    // callbacks alike: the increment must be atomic, not a
+    // read-modify-write on a plain volatile int.
+    private val connectionGeneration = AtomicInteger(0)
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -261,8 +264,15 @@ class IVeePNVpnService : VpnService() {
         connectJob = null
         watchdogJob?.cancel()
         watchdogJob = null
-        connectionGeneration++
-        releaseResources(detachResources(), stopNativeTunnel = true)
+        connectionGeneration.incrementAndGet()
+        val doomed = detachResources()
+        // Teardown stops the native tunnel and closes sockets — blocking
+        // work that must not run synchronously on the main thread,
+        // which is where onDestroy is called.
+        Thread(
+            { releaseResources(doomed, stopNativeTunnel = true) },
+            "iveepn-teardown",
+        ).start()
         releaseWakeLocks()
         notificationProxyOnly = false
         foregroundActive = false
@@ -346,7 +356,7 @@ class IVeePNVpnService : VpnService() {
         }
         AppLogger.i(TAG, "disconnect: $reason")
 
-        val endedGeneration = ++connectionGeneration
+        val endedGeneration = connectionGeneration.incrementAndGet()
         _state.value = ConnectionState.DISCONNECTED
         _vpnLiveStats.value = VpnLiveStats()
         _connectedAtEpochMs.value = null
@@ -365,7 +375,7 @@ class IVeePNVpnService : VpnService() {
 
         scope.launch {
             opMutex.withLock {
-                val stillOurs = connectionGeneration == endedGeneration
+                val stillOurs = connectionGeneration.get() == endedGeneration
                 releaseResources(doomed, stopNativeTunnel = stillOurs)
 
                 if (stillOurs && _state.value == ConnectionState.DISCONNECTED) {
@@ -392,8 +402,20 @@ class IVeePNVpnService : VpnService() {
         start(this)
     }
 
+    /**
+     * Address the TUN layer should use to reach the local SOCKS5
+     * server: a wildcard bind ("0.0.0.0" / "::") is reached through
+     * loopback; any other configured bind address is used as-is. (The
+     * tunnel config used to hardcode 127.0.0.1, which silently broke
+     * the TUN path whenever a specific LAN address was configured.)
+     */
+    private fun effectiveSocksAddress(): String {
+        val bind = (applicationContext as IVeePNApp).settingsStore.socksBindAddress
+        return if (bind == "0.0.0.0" || bind == "::") "127.0.0.1" else bind
+    }
+
     private fun ensureGenerationCurrent(myGeneration: Int) {
-        if (myGeneration != connectionGeneration) {
+        if (myGeneration != connectionGeneration.get()) {
             throw CancellationException("connect was superseded by a newer request")
         }
     }
@@ -420,7 +442,7 @@ class IVeePNVpnService : VpnService() {
     }
 
     private suspend fun connect() {
-        val myGeneration = ++connectionGeneration
+        val myGeneration = connectionGeneration.incrementAndGet()
 
         lastUnhealthyRedialAt = 0L
         boundNetwork = null
@@ -490,9 +512,10 @@ class IVeePNVpnService : VpnService() {
             } else {
                 val fd = establishTun(excludedApps, dohUrl, mtu = settingsStore.mtu)
                 if (fd == null) {
-                    // F-12: explicit TUN failure behaviour. The default is a
-                    // LOUD fallback to proxy-only mode; with the fallback off
-                    // the connect fails instead of leaking traffic.
+                    // Explicit TUN failure behaviour: with the opt-in
+                    // fallback enabled, fall back LOUDLY to proxy-only
+                    // mode; with it off — the default — the connect
+                    // fails instead of leaking traffic.
                     if (!settingsStore.tunFallbackToProxy) {
                         error(s(R.string.service_err_tun_failed))
                     }
@@ -518,6 +541,7 @@ class IVeePNVpnService : VpnService() {
                         socksPort,
                         useMapDns = mapdnsActive,
                         mtu = settingsStore.mtu,
+                        socksAddress = effectiveSocksAddress(),
                     )
                     val tunnelStarted = HevSocks5Tunnel.start(tunnelConfigPath, fd.fd)
                     if (!tunnelStarted) error(s(R.string.service_err_tunnel_start))
@@ -560,7 +584,7 @@ class IVeePNVpnService : VpnService() {
                 }
 
                 if (dialResult != null) {
-                    if (myGeneration != connectionGeneration) {
+                    if (myGeneration != connectionGeneration.get()) {
                         runCatching { dialResult.close() }
                         ensureGenerationCurrent(myGeneration)
                     }
@@ -600,7 +624,7 @@ class IVeePNVpnService : VpnService() {
             if (endpoint != null) {
                 scope.launch {
                     val ping = PingUtil.measureTcpLatencyMs(endpoint.first, endpoint.second)
-                    if (myGeneration == connectionGeneration) {
+                    if (myGeneration == connectionGeneration.get()) {
                         _pingLatencyMs.value = ping
                     }
                 }
@@ -609,15 +633,14 @@ class IVeePNVpnService : VpnService() {
             if (settingsStore.exitCheckEnabled) {
                 scope.launch {
                     val ip = runCatching { liveSession?.probeExitIp() }.getOrNull()
-                    if (ip != null && myGeneration == connectionGeneration) {
+                    if (ip != null && myGeneration == connectionGeneration.get()) {
                         val cc = app.selectedLocationStore.load()?.countryCode.orEmpty()
                         _vpnEdgeIp.value = IpLocationInfo(ip, cc)
-                        AppLogger.i(TAG, "exit check: observed exit ip=$ip")
+                        AppLogger.i(TAG, "exit check: observed exit ip=${AppLogger.maskIp(ip)}")
                         // A successful probe is direct proof the session
                         // carries traffic; clear any failure evidence the
                         // SOCKS health tracker collected before it ran, so
-                        // a proven session is not redialed on stale counts
-                        // (device log 2026-11-04, region fr-prs).
+                        // a proven session is not redialed on stale counts.
                         socksServer?.noteUpstreamReachable()
                     }
                 }
@@ -693,7 +716,7 @@ class IVeePNVpnService : VpnService() {
                         continue
                     }
 
-                    if (myGeneration != connectionGeneration) {
+                    if (myGeneration != connectionGeneration.get()) {
                         AppLogger.i(TAG, "discarding stale reconnect from a torn-down session generation")
                         runCatching { fresh.close() }
                         return@launch
@@ -776,12 +799,10 @@ class IVeePNVpnService : VpnService() {
             .addDnsServer(dnsServer)
             .setMtu(mtu)
             .setBlocking(true)
-            .apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    runCatching { setMetered(false) }
-                        .onFailure { AppLogger.d(TAG, "could not mark the tunnel as unmetered: ${it.message}") }
-                }
-            }
+            // Metering is deliberately NOT overridden: the VPN network
+            // inherits the underlying network's metered state, so Data
+            // Saver and per-app data policies keep working as the user
+            // configured them on a metered connection.
             .apply {
                 runCatching { addDisallowedApplication(packageName) }
                     .onFailure { AppLogger.w(TAG, "failed to exclude own app from the VPN tunnel", it) }
@@ -794,7 +815,7 @@ class IVeePNVpnService : VpnService() {
     }
 
     private fun teardown() {
-        connectionGeneration++
+        connectionGeneration.incrementAndGet()
         watchdogJob?.cancel()
         watchdogJob = null
         releaseResources(detachResources(), stopNativeTunnel = true)
@@ -868,23 +889,30 @@ class IVeePNVpnService : VpnService() {
         }
     }
 
-    private fun buildNotification(text: String, subText: String? = null): Notification {
-        val openIntent = PendingIntent.getActivity(
+    // The notification is rebuilt on every speed update (2s), but its
+    // two PendingIntents never change: build them once and reuse.
+    private val openPendingIntent: PendingIntent by lazy {
+        PendingIntent.getActivity(
             this, REQUEST_CODE_OPEN, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+    }
 
-        val disconnectIntent = PendingIntent.getService(
+    private val disconnectPendingIntent: PendingIntent by lazy {
+        PendingIntent.getService(
             this, REQUEST_CODE_DISCONNECT, Intent(this, IVeePNVpnService::class.java).setAction(ACTION_DISCONNECT),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+    }
+
+    private fun buildNotification(text: String, subText: String? = null): Notification {
         val builder = NotificationCompat.Builder(this, IVeePNApp.VPN_NOTIFICATION_CHANNEL_ID)
             .setContentTitle(
                 if (notificationProxyOnly) s(R.string.notif_proxy_only_title) else s(R.string.app_name),
             )
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(openIntent)
+            .setContentIntent(openPendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
@@ -900,7 +928,7 @@ class IVeePNVpnService : VpnService() {
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 s(R.string.notif_disconnect),
-                disconnectIntent,
+                disconnectPendingIntent,
             )
         return builder.build()
     }
@@ -961,15 +989,6 @@ class IVeePNVpnService : VpnService() {
 
         private val _connectedEndpoint = MutableStateFlow<Pair<String, Int>?>(null)
         val connectedEndpoint: StateFlow<Pair<String, Int>?> = _connectedEndpoint
-
-        suspend fun pingNow(): Int? {
-            val endpoint = _connectedEndpoint.value ?: return null
-            val latency = PingUtil.measureTcpLatencyMs(endpoint.first, endpoint.second)
-            if (_state.value == ConnectionState.CONNECTED) {
-                _pingLatencyMs.value = latency
-            }
-            return latency
-        }
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, IVeePNVpnService::class.java).setAction(ACTION_CONNECT))

@@ -78,7 +78,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Settings — every row drives a real setting consumed by the VPN service
- * or the UI, including the F-06 live chain test. Redesigned with the rest
+ * or the UI, including the live chain test. Redesigned with the rest
  * of the app: Scaffold with safe-drawing insets, the unified TopAppBar,
  * grouped cards, full string resources (EN/FA), ≥48dp targets, inline
  * dialog validation, and a LAN-exposure confirmation before a
@@ -544,11 +544,11 @@ private fun chainStepName(context: Context, id: ChainStepId, region: String): St
     }
 
 /**
- * F-06: one step of the live chain test (guest token, locations count,
+ * One step of the live chain test (guest token, locations count,
  * server list for the selected region, exit IP through a real tunnel).
  * The full ✓/✗ line with the raw outcome goes to the log; the dialog
  * shows the localised detail or a friendly error (audit row 13) and can
- * re-run a single failed step (V-48).
+ * re-run a single failed step.
  */
 private suspend fun runChainStep(
     context: Context,
@@ -590,7 +590,7 @@ private suspend fun runChainStep(
         onFailure = { error ->
             // AppLogger.w appends ": <error.message>" itself when a
             // throwable is passed; embedding the message here as well
-            // printed it twice in the log (device log 2026-11-04).
+            // printed it twice in the log (observed on device).
             AppLogger.w(CHAIN_TAG, "✗ $name", error)
         },
     )
@@ -671,7 +671,7 @@ private fun SettingsSection(
 
 @Composable
 private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    // V-27: a light haptic tick confirms the toggle. The whole row is the
+    // A light haptic tick confirms the toggle. The whole row is the
     // click target (audit row 21), not just the switch thumb.
     val haptics = LocalHapticFeedback.current
     Row(
@@ -773,7 +773,7 @@ private fun NumberEditDialog(field: NumberField, onDismiss: () -> Unit) {
         text = {
             OutlinedTextField(
                 value = text,
-                // V-18: numeric keyboard + digit-only filtering.
+                // Numeric keyboard + digit-only filtering.
                 onValueChange = { text = it.filter { c -> c.isDigit() } },
                 label = { Text(stringResource(field.titleRes)) },
                 supportingText = {
@@ -854,7 +854,7 @@ private fun TextEditDialog(field: TextField, onDismiss: () -> Unit) {
 @Composable
 private fun ExcludedAppsDialog(app: IVeePNApp, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    // V-50 / audit row 18: the installed-app list is loaded off the main
+    // Audit row 18: the installed-app list is loaded off the main
     // thread; the dialog shows a loading state, then a searchable list.
     var installed by remember { mutableStateOf<List<Pair<String, String>>?>(null) }
     LaunchedEffect(Unit) {
@@ -881,6 +881,14 @@ private fun ExcludedAppsDialog(app: IVeePNApp, onDismiss: () -> Unit) {
                     label = { Text(stringResource(R.string.excluded_search_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                )
+                // Android 11+ package visibility: apps without a
+                // launcher entry never appear in this list — say so
+                // instead of letting the user think an app is missing.
+                Text(
+                    stringResource(R.string.settings_split_tunnel_visibility_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 val apps = installed
                 when {

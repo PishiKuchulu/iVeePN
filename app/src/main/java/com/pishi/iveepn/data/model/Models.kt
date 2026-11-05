@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED }
 
 /**
- * One entry of GET /v3/location/extension/ (F-02). Field names mirror the
+ * One entry of GET /v3/location/extension/. Field names mirror the
  * VeePN API: `region` is the code passed to the server-list endpoint,
  * `name` is the city name, `proxyType == 0` marks a free location.
  */
@@ -25,7 +25,7 @@ data class VeePNLocation(
 }
 
 /**
- * One usable upstream HTTPS-proxy server from POST /v3/server/list/ (F-03),
+ * One usable upstream HTTPS-proxy server from POST /v3/server/list/,
  * with its guest credentials. Never log [password].
  */
 @Serializable
@@ -34,7 +34,15 @@ data class VeePNServer(
     val port: Int,
     val username: String,
     val password: String,
-)
+) {
+    /**
+     * The generated data-class string form would print the guest
+     * credentials verbatim; mask them so a stray log/interpolation of a
+     * server can never leak them.
+     */
+    override fun toString(): String =
+        "VeePNServer(addresses=$addresses, port=$port, username=$username, credentials=***)"
+}
 
 fun countryCodeToEmojiFlag(countryCode: String): String {
     if (countryCode.equals("REC", ignoreCase = true) || countryCode.length != 2) return ""

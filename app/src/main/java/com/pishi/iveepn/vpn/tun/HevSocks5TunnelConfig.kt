@@ -56,7 +56,13 @@ object HevSocks5TunnelConfig {
         return (packed and MAPDNS_NETMASK_BITS) == MAPDNS_NETWORK_BITS
     }
 
-    fun write(context: Context, socksPort: Int, useMapDns: Boolean = true, mtu: Int = TUN_MTU): String {
+    fun write(
+        context: Context,
+        socksPort: Int,
+        useMapDns: Boolean = true,
+        mtu: Int = TUN_MTU,
+        socksAddress: String = "127.0.0.1",
+    ): String {
 
         val mapdnsBlock = if (useMapDns) {
             """
@@ -78,7 +84,7 @@ object HevSocks5TunnelConfig {
               icmp: '$TUNNEL_ICMP_MODE'
             socks5:
               port: $socksPort
-              address: '127.0.0.1'
+              address: '$socksAddress'
               udp: 'udp'
             """.trimIndent() + "\n" + mapdnsBlock +
             """

@@ -19,14 +19,14 @@ object RelayDispatchers {
     private val threadCounter = AtomicLong(0)
 
     private val threadFactory = ThreadFactory { runnable ->
-        Thread(null, runnable, "foxy-relay-${threadCounter.incrementAndGet()}", RELAY_THREAD_STACK_BYTES).apply {
+        Thread(null, runnable, "iveepn-relay-${threadCounter.incrementAndGet()}", RELAY_THREAD_STACK_BYTES).apply {
 
             isDaemon = true
             priority = Thread.NORM_PRIORITY
         }
     }
 
-    // STB-FX-08: the pool was unbounded (Int.MAX_VALUE threads). Each relayed
+    // The pool was previously unbounded (Int.MAX_VALUE threads). Each relayed
     // connection parks blocking copy loops on this dispatcher, so an
     // connection burst could grow native thread stacks without limit and OOM
     // the whole VPN process. The cap matches the servers' connection budgets

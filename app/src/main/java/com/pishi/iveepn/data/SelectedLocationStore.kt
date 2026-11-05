@@ -4,7 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** The location the user picked on the Locations screen (F-02). */
+/** The location the user picked on the Locations screen. */
 data class SelectedLocation(
     val region: String,
     val countryName: String = "",

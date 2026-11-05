@@ -96,7 +96,7 @@ class VeePNSession(
      * The previous implementation tunnelled only through the first
      * server in the list, so one dead server failed the probe (and the
      * Settings chain test built on it) while the pool was serving
-     * traffic through the remaining servers (device log 2026-11-04:
+     * traffic through the remaining servers (observed on device:
      * region us-or carried a full session, then the chain test's
      * exit-IP step failed).
      *

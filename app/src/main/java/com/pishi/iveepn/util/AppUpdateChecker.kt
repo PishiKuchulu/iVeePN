@@ -52,8 +52,8 @@ object AppUpdateChecker {
     private val VERSION_TAG = Regex("""^v\d+\.\d+\.\d+$""")
     private val json = Json { ignoreUnknownKeys = true }
 
-    // Dedicated clients: update traffic must not ride the VPN control-plane
-    // client (Mozilla cookie jar, VPN socket protector, TLS splitting).
+    // Dedicated plain OkHttp clients for update traffic, kept separate
+    // from the VPN control-plane HTTP stack.
     val apiClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -87,9 +87,9 @@ object AppUpdateChecker {
      * Throwing here keeps the caller from reporting "You're up to date"
      * when GitHub could not actually be asked — most visibly the
      * unauthenticated rate limit (HTTP 403) that shared VPN egress IPs
-     * routinely hit, which hid the live v1.0.28 release from phones on
-     * 1.0.27. The status code travels in the exception message so the
-     * failure dialog can show it.
+     * routinely hit, which can hide a newer published release from
+     * devices still running an older version. The status code travels in
+     * the exception message so the failure dialog can show it.
      */
     internal fun ensureSuccessful(code: Int) {
         if (code !in 200..299) throw IOException("HTTP $code")
@@ -100,7 +100,7 @@ object AppUpdateChecker {
      * releases newer than [currentVersion] (drafts and prereleases
      * excluded), pick the highest version that carries the canonical
      * `iVeePN-v<version>.apk` asset. An arbitrary `.apk` asset of any
-     * other name no longer counts (external review, A6): accepting one
+     * other name no longer counts: accepting one
      * would let any APK attached to a release be offered as an update.
      * Old Windows-only tags have no such asset and are skipped.
      */
