@@ -1,5 +1,20 @@
 # Changelog
 
+## iVeePN 1.0.6 (versionCode 7) — pre-connect ping in Locations
+
+- The Locations list now measures latency before connecting: when the
+  list loads, every free location is probed automatically (TCP connect
+  time to the fastest of its first three servers, 1.5 s timeout, four
+  regions in parallel). Each free row shows a quality-coloured dot and
+  its latency, the fastest location of the round is labelled and
+  summarised above the list, and a "Fastest first" chip re-sorts the
+  list by measured latency. The refresh action in the top bar re-runs
+  the round. Premium locations are not probed (they cannot be selected
+  in guest mode, and probing all 185 regions would hammer the API);
+  a region's server list comes from the existing 12 h cache, so repeat
+  rounds cost only the short TCP probes. Probing reuses the same
+  direct-socket measurement as the connected-session ping.
+
 ## iVeePN 1.0.5 (versionCode 6) — in-app updater fix
 
 - The in-app updater never offered an update: its release selection

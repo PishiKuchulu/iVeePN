@@ -69,6 +69,13 @@
     <string name="locations_optimal">موقعیت بهینه</string>
     <string name="locations_free">رایگان</string>
     <string name="locations_selected">انتخاب‌شده</string>
+    <string name="locations_ping_ms">%1$d میلی‌ثانیه</string>
+    <string name="locations_ping_retest">سنجش دوباره پینگ</string>
+    <string name="locations_ping_testing">در حال سنجش پینگ…</string>
+    <string name="locations_ping_unreachable">در دسترس نیست</string>
+    <string name="locations_ping_fastest">سریع‌ترین</string>
+    <string name="locations_sort_fastest">سریع‌ترین اول</string>
+    <string name="locations_ping_summary_fastest">سریع‌ترین: %1$s · %2$d میلی‌ثانیه</string>
 
     <!-- Settings -->
     <string name="settings_title">تنظیمات</string>

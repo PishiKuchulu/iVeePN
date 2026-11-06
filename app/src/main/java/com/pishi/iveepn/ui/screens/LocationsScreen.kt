@@ -23,10 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -66,8 +69,16 @@ import com.pishi.iveepn.data.SelectedLocation
 import com.pishi.iveepn.data.model.VeePNLocation
 import com.pishi.iveepn.data.model.emojiFlag
 import com.pishi.iveepn.ui.UiErrors
+import com.pishi.iveepn.ui.theme.LocalIVeePNStatusColors
 import com.pishi.iveepn.ui.theme.Spacing
+import com.pishi.iveepn.vpn.LocationPingProber
+import com.pishi.iveepn.vpn.LocationPingState
+import com.pishi.iveepn.vpn.pingQuality
+import com.pishi.iveepn.vpn.PingQuality
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Locations from the VeePN API with a Free / All
@@ -75,7 +86,9 @@ import kotlinx.coroutines.delay
  * region for the next dial. Premium locations are visible in the All tab
  * but cannot be selected in guest mode. The currently selected location is
  * highlighted with a check; loading shows skeleton rows and failures show a
- * friendly, localised message with retry.
+ * friendly, localised message with retry. On load, every free location is
+ * pinged (pre-connect latency, see [LocationPingProber]) and each free row
+ * shows its result; the list can be re-sorted fastest-first.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,6 +134,37 @@ fun LocationsScreen(
         }
     }
 
+    // Pre-connect ping: as soon as the free locations are known, measure
+    // each one's latency so the fastest can be picked before connecting.
+    // Only free locations are probed — premium ones cannot be selected
+    // in guest mode, and probing all 185 regions would hammer the API
+    // for their server lists. A region's server list is cached (12 h),
+    // so repeat rounds cost only the short TCP probes.
+    var pingStates by remember { mutableStateOf<Map<String, LocationPingState>>(emptyMap()) }
+    var pingRunKey by remember { mutableIntStateOf(0) }
+    var sortByPing by remember { mutableStateOf(false) }
+    val pingInProgress = pingStates.values.any { it is LocationPingState.Testing }
+    val fastestRegion = pingStates.entries
+        .filter { it.value is LocationPingState.Reachable }
+        .minByOrNull { (it.value as LocationPingState.Reachable).ms }
+        ?.key
+
+    LaunchedEffect(free, pingRunKey) {
+        val regions = free.map { it.region }.distinct()
+        if (regions.isEmpty()) return@LaunchedEffect
+        pingStates = regions.associateWith { LocationPingState.Testing }
+        val prober = LocationPingProber(
+            serverList = { region -> app.veePNApi.serverList(region) },
+        )
+        val gate = Semaphore(PING_PARALLELISM)
+        regions.map { region ->
+            launch {
+                val result = gate.withPermit { prober.pingRegion(region) }
+                pingStates = pingStates + (region to result)
+            }
+        }.forEach { it.join() }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -133,6 +177,19 @@ fun LocationsScreen(
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { pingRunKey++ },
+                        enabled = !loading && !pingInProgress && free.isNotEmpty(),
+                    ) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = stringResource(
+                                R.string.locations_ping_retest,
+                            ),
                         )
                     }
                 },
@@ -263,12 +320,70 @@ fun LocationsScreen(
                     }
                     else -> {
                         val source = if (tab == 0) free else all
-                        val filtered = source.filter { loc ->
+                        val baseFiltered = source.filter { loc ->
                             debouncedQuery.isBlank() ||
                                 loc.name.contains(debouncedQuery, ignoreCase = true) ||
                                 loc.countryName.contains(debouncedQuery, ignoreCase = true) ||
                                 loc.region.contains(debouncedQuery, ignoreCase = true)
-                        }.sortedBy { it.countryName }
+                        }
+                        val filtered = if (sortByPing) {
+                            baseFiltered.sortedWith(
+                                compareBy(
+                                    { loc: VeePNLocation ->
+                                        pingRank(pingStates[loc.region])
+                                    },
+                                    { loc: VeePNLocation ->
+                                        (pingStates[loc.region] as?
+                                            LocationPingState.Reachable)?.ms
+                                            ?: Int.MAX_VALUE
+                                    },
+                                    { loc: VeePNLocation -> loc.countryName },
+                                ),
+                            )
+                        } else {
+                            baseFiltered.sortedBy { it.countryName }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = Spacing.sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        ) {
+                            FilterChip(
+                                selected = sortByPing,
+                                onClick = { sortByPing = !sortByPing },
+                                label = {
+                                    Text(stringResource(R.string.locations_sort_fastest))
+                                },
+                                enabled = pingStates.values.any {
+                                    it is LocationPingState.Reachable
+                                },
+                            )
+                            val fastestLoc = fastestRegion?.let { region ->
+                                free.firstOrNull { it.region == region }
+                            }
+                            val fastestMs = (fastestRegion?.let { pingStates[it] }
+                                as? LocationPingState.Reachable)?.ms
+                            Text(
+                                text = when {
+                                    pingInProgress -> stringResource(
+                                        R.string.locations_ping_testing,
+                                    )
+                                    fastestLoc != null && fastestMs != null ->
+                                        stringResource(
+                                            R.string.locations_ping_summary_fastest,
+                                            fastestLoc.name
+                                                .ifBlank { fastestLoc.region.uppercase() },
+                                            fastestMs,
+                                        )
+                                    else -> ""
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
 
                         if (filtered.isEmpty()) {
                             Column(
@@ -429,6 +544,13 @@ fun LocationsScreen(
                                                     )
                                                 }
                                             }
+                                            if (loc.isFree) {
+                                                PingChip(
+                                                    state = pingStates[loc.region]
+                                                        ?: LocationPingState.NotTested,
+                                                    isFastest = loc.region == fastestRegion,
+                                                )
+                                            }
                                             if (isSelected) {
                                                 Icon(
                                                     Icons.Filled.CheckCircle,
@@ -450,6 +572,72 @@ fun LocationsScreen(
     }
 }
 
+/** Sort rank for the fastest-first ordering: reachable, pending, dead. */
+private fun pingRank(state: LocationPingState?): Int = when (state) {
+    is LocationPingState.Reachable -> 0
+    LocationPingState.Unreachable -> 2
+    else -> 1
+}
+
+/**
+ * Pre-connect latency for one row: a small spinner while the probe is
+ * running, then a quality-coloured dot with the best latency, a
+ * "Fastest" label on the round's winner, or an unreachable note.
+ */
+@Composable
+private fun PingChip(state: LocationPingState, isFastest: Boolean) {
+    val statusColors = LocalIVeePNStatusColors.current
+    Column(horizontalAlignment = Alignment.End) {
+        when (state) {
+            LocationPingState.Testing -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+            is LocationPingState.Reachable -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                when (pingQuality(state.ms)) {
+                                    PingQuality.GOOD -> statusColors.connected
+                                    PingQuality.FAIR -> statusColors.connecting
+                                    PingQuality.POOR -> statusColors.warning
+                                },
+                                CircleShape,
+                            ),
+                    )
+                    Text(
+                        text = stringResource(R.string.locations_ping_ms, state.ms),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (isFastest) {
+                    Text(
+                        text = stringResource(R.string.locations_ping_fastest),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+            LocationPingState.Unreachable -> {
+                Text(
+                    text = stringResource(R.string.locations_ping_unreachable),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            LocationPingState.NotTested -> Unit
+        }
+    }
+}
+
 /** Small pale-teal pill marking a free location, as in the Soft UI design. */
 @Composable
 private fun FreeChip() {
@@ -467,3 +655,6 @@ private fun FreeChip() {
 }
 
 private const val TAG = "LocationsScreen"
+
+/** Regions probed in parallel during one ping round. */
+private const val PING_PARALLELISM = 4

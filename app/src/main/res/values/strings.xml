@@ -69,6 +69,13 @@
     <string name="locations_optimal">Optimal location</string>
     <string name="locations_free">Free</string>
     <string name="locations_selected">Selected</string>
+    <string name="locations_ping_ms">%1$d ms</string>
+    <string name="locations_ping_retest">Test ping again</string>
+    <string name="locations_ping_testing">Testing ping\u2026</string>
+    <string name="locations_ping_unreachable">Unreachable</string>
+    <string name="locations_ping_fastest">Fastest</string>
+    <string name="locations_sort_fastest">Fastest first</string>
+    <string name="locations_ping_summary_fastest">Fastest: %1$s \u00B7 %2$d ms</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
