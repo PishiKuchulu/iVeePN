@@ -1,5 +1,31 @@
 # Changelog
 
+## iVeePN 1.0.7 (versionCode 8) — audit-5 fix wave
+
+Fixes from the fifth external audit, verified against the source (and,
+for the first item, against a fresh clone of the public repository)
+before implementation:
+
+- The public repository could not bootstrap a build from a clean
+  clone: the Gradle wrapper jar, the Vazirmatn font files and the
+  launcher-icon PNGs were missing from the remote tree, and `gradlew`
+  had lost its executable bit (the snapshot push route used for this
+  repository carries text files only). The missing binary files have
+  been restored to the repository; until the executable bit can be
+  restored through the same route, the README documents `bash gradlew`
+  as the bootstrap command (CI was never affected — it regenerates the
+  wrapper, icons and fonts itself).
+- The in-app updater deleted the downloaded update APK immediately
+  after handing it to the system installer, racing the installer's
+  asynchronous read of the content URI. The file now stays in place —
+  the state remains ReadyToInstall so a dismissed installer can be
+  retried — and leftovers are reclaimed by a stale-file sweep (older
+  than one hour) when the update controller is created.
+- CI lint is now a gate, not a report: the lint step in the build
+  workflow no longer continues on error, and the signed-release
+  workflow runs lint after the unit tests, before the keystore is
+  decoded.
+
 ## iVeePN 1.0.6 (versionCode 7) — pre-connect ping in Locations
 
 - The Locations list now measures latency before connecting: when the

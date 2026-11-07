@@ -45,6 +45,16 @@
 3. Install it (Android 8.0+, API 26).
 4. Open the app, select a free location, and connect!
 
+### 🛠️ Building from Source
+
+Prerequisites: JDK 17, Android SDK 35, NDK 26.1.10909125. Then:
+
+```bash
+bash gradlew testDebugUnitTest assembleDebug
+```
+
+(`bash gradlew` instead of `./gradlew`: the executable bit on `gradlew` is currently not preserved by this repository's push route — the wrapper jar itself is in the tree, so the `bash` form bootstraps identically.)
+
 ### 🙏 Origins & Credits
 
 * The Android technical skeleton (VPN service mechanics, local proxy servers, updater) originates from [PishiKuchulu/iFoxy](https://github.com/PishiKuchulu/iFoxy), itself based on [Vauth/FoxyVPN](https://github.com/Vauth/FoxyVPN). iVeePN's UI and identity are original to this project.
@@ -92,6 +102,16 @@
 ۲. آخرین نسخه (`iVeePN-<version>.apk`) را دانلود کنید.
 ۳. نصب کنید (نیازمند اندروید ۸.۰ به بالا، API 26).
 ۴. برنامه را باز کنید، یک لوکیشن رایگان انتخاب کنید و وصل شوید!
+
+### 🛠️ بیلد از سورس
+
+پیش‌نیازها: JDK 17، ‏Android SDK 35 و NDK 26.1.10909125. بعد:
+
+```bash
+bash gradlew testDebugUnitTest assembleDebug
+```
+
+(دلیل استفاده از `bash gradlew` به‌جای `./gradlew` این است که بیت اجرایی gradlew فعلاً در مسیر پوش این ریپو حفظ نمی‌شود — خود فایل wrapper jar در درخت هست و فرم bash دقیقاً همان بوت‌استرپ را انجام می‌دهد.)
 
 ### 🙏 خاستگاه و اعتبارها
 

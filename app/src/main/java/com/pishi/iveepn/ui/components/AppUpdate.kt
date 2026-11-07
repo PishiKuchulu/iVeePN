@@ -111,6 +111,27 @@ class AppUpdateController(private val appContext: Context) {
     @Volatile
     private var cancelRequested = false
 
+    init {
+        // Downloaded update APKs are handed to the system installer by
+        // content URI and the installer reads them asynchronously, so
+        // install() must not delete the file it just handed off (an
+        // earlier version did, racing the installer's read). Leftovers
+        // are reclaimed here instead: at controller creation, anything
+        // in the update cache older than the grace window is stale — a
+        // live handoff completes in minutes — and is removed.
+        scope.launch(Dispatchers.IO) { clearStaleUpdateFiles() }
+    }
+
+    private fun clearStaleUpdateFiles() {
+        val dir = File(appContext.cacheDir, "updates")
+        val cutoff = System.currentTimeMillis() - STALE_UPDATE_MAX_AGE_MS
+        dir.listFiles()?.forEach { file ->
+            if (file.lastModified() < cutoff) {
+                runCatching { file.delete() }
+            }
+        }
+    }
+
     private fun localizedContext(): Context =
         (appContext as? IVeePNApp)?.let { appContext.withAppLocale(it.settingsStore) } ?: appContext
 
@@ -225,9 +246,13 @@ class AppUpdateController(private val appContext: Context) {
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.startActivity(intent)
-        // The verified APK has been handed to the installer; the cache
-        // copy is no longer needed and should not linger on disk.
-        runCatching { ready.file.delete() }
+        // The verified APK has been handed to the installer, which reads
+        // the content URI asynchronously and in another process: the
+        // file must stay on disk until that read is done, so it is NOT
+        // deleted here. The state stays ReadyToInstall so a dismissed
+        // installer can be retried with the same file; the leftover is
+        // reclaimed by the stale-file sweep at the next controller
+        // creation (see init).
         dialogVisible = false
     }
 
@@ -329,6 +354,13 @@ class AppUpdateController(private val appContext: Context) {
  */
 private const val RELEASE_CERT_SHA256 =
     "50285e755253266b147e4245afb9fee667fc0930e31811268a1941c335d62b93"
+
+/**
+ * How long a downloaded update APK may sit in the cache before the
+ * sweep at controller creation treats it as a leftover. A live
+ * installer handoff completes in minutes; an hour is generous.
+ */
+private const val STALE_UPDATE_MAX_AGE_MS = 60L * 60 * 1000
 
 /** SHA-256 fingerprint of an APK file's signing certificate, or null. */
 private fun apkSignerSha256(context: android.content.Context, file: File): String? {
