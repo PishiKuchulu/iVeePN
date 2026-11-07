@@ -96,8 +96,9 @@ jobs:
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
-              - name: Lint
-                      run: ./gradlew lintDebug --no-daemon
+
+      - name: Lint
+        run: ./gradlew lintDebug --no-daemon
 
       - name: Decode the release keystore from secrets
         env:

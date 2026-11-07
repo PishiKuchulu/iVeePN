@@ -92,7 +92,7 @@ jobs:
         run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Lint
-              run: ./gradlew lintDebug --no-daemon
+        run: ./gradlew lintDebug --no-daemon
 
       - name: Upload lint report
         if: always()
