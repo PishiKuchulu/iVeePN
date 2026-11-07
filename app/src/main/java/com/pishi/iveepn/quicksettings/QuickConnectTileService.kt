@@ -1,5 +1,6 @@
 package com.pishi.iveepn.quicksettings
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -98,6 +99,11 @@ class QuickConnectTileService : TileService() {
         tile.updateTile()
     }
 
+    // The Intent overload is deprecated on API 34+, where the
+    // PendingIntent overload is used instead (branch below). On older
+    // APIs the Intent overload is the only form that exists, so the
+    // lint error is suppressed for this guarded call site only.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun launchMainActivityAndCollapse() {
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)

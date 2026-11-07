@@ -24,7 +24,11 @@ before implementation:
 - CI lint is now a gate, not a report: the lint step in the build
   workflow no longer continues on error, and the signed-release
   workflow runs lint after the unit tests, before the keystore is
-  decoded.
+  decoded. The gate's first run caught one pre-existing lint error —
+  the deprecated `TileService.startActivityAndCollapse(Intent)`
+  overload, used only as the pre-API-34 fallback next to the
+  PendingIntent branch — now scoped-suppressed at that guarded call
+  site.
 
 ## iVeePN 1.0.6 (versionCode 7) — pre-connect ping in Locations
 
