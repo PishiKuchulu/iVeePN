@@ -910,8 +910,10 @@ private class TextField(
     @StringRes val supportingRes: Int,
     @StringRes val errorRes: Int,
     val validate: (String) -> Boolean,
-    val onSave: (String) -> Unit,
+    // Not last on purpose: onSave must stay the final parameter so
+    // call sites can keep passing it as a trailing lambda.
     val secret: Boolean = false,
+    val onSave: (String) -> Unit,
 )
 
 @Composable
