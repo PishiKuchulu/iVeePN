@@ -188,6 +188,74 @@ class SettingsStore(context: Context) {
             prefs.edit().putStringSet(KEY_EXCLUDED_APPS, HashSet(value)).apply()
         }
 
+    /** Apps routed through the tunnel when the split mode is ONLY_SELECTED. */
+    var includedApps: Set<String>
+        get() = prefs.getStringSet(KEY_INCLUDED_APPS, emptySet())?.toSet() ?: emptySet()
+        set(value) {
+            prefs.edit().putStringSet(KEY_INCLUDED_APPS, HashSet(value)).apply()
+        }
+
+    // ------------------------------------------------------- transport
+
+    /** Route connections to VeePN servers (and the API) via an upstream SOCKS5 proxy. */
+    var upstreamSocksEnabled: Boolean
+        get() = prefs.getBoolean(KEY_UPSTREAM_SOCKS_ENABLED, false)
+        set(value) { prefs.edit().putBoolean(KEY_UPSTREAM_SOCKS_ENABLED, value).apply() }
+
+    var upstreamSocksHost: String
+        get() = prefs.getString(KEY_UPSTREAM_SOCKS_HOST, "") ?: ""
+        set(value) { prefs.edit().putString(KEY_UPSTREAM_SOCKS_HOST, value.trim()).apply() }
+
+    var upstreamSocksPort: Int
+        get() = prefs.getInt(KEY_UPSTREAM_SOCKS_PORT, 1080)
+        set(value) { prefs.edit().putInt(KEY_UPSTREAM_SOCKS_PORT, value).apply() }
+
+    /** Upstream proxy credentials live in the encrypted store, never in plain prefs. */
+    var upstreamSocksUsername: String
+        get() = credentialsPrefs.getString(KEY_UPSTREAM_SOCKS_USERNAME, "") ?: ""
+        set(value) { credentialsPrefs.edit().putString(KEY_UPSTREAM_SOCKS_USERNAME, value).apply() }
+
+    var upstreamSocksPassword: String
+        get() = credentialsPrefs.getString(KEY_UPSTREAM_SOCKS_PASSWORD, "") ?: ""
+        set(value) { credentialsPrefs.edit().putString(KEY_UPSTREAM_SOCKS_PASSWORD, value).apply() }
+
+    /** Resolve VeePN API domains through the configured DoH provider instead of system DNS. */
+    var bootstrapDohEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BOOTSTRAP_DOH_ENABLED, false)
+        set(value) { prefs.edit().putBoolean(KEY_BOOTSTRAP_DOH_ENABLED, value).apply() }
+
+    /** Experimental: segment the TLS ClientHello of VeePN-bound connections. */
+    var tlsFragmentationEnabled: Boolean
+        get() = prefs.getBoolean(KEY_TLS_FRAGMENTATION_ENABLED, false)
+        set(value) { prefs.edit().putBoolean(KEY_TLS_FRAGMENTATION_ENABLED, value).apply() }
+
+    var splitTunnelMode: SplitTunnelMode
+        get() = SplitTunnelMode.fromStored(prefs.getString(KEY_SPLIT_TUNNEL_MODE, null))
+        set(value) {
+            prefs.edit().putString(KEY_SPLIT_TUNNEL_MODE, value.name).apply()
+        }
+
+    /**
+     * How per-app split tunneling routes traffic. The default preserves
+     * the historical behaviour of the excluded-apps list.
+     */
+    enum class SplitTunnelMode {
+        /** Every app uses the tunnel (the app itself always bypasses). */
+        ALL,
+
+        /** Every app uses the tunnel except [SettingsStore.excludedApps]. */
+        EXCLUDE_SELECTED,
+
+        /** Only [SettingsStore.includedApps] use the tunnel. */
+        ONLY_SELECTED,
+        ;
+
+        companion object {
+            fun fromStored(value: String?): SplitTunnelMode =
+                entries.firstOrNull { it.name == value } ?: EXCLUDE_SELECTED
+        }
+    }
+
     enum class DnsProvider(
         val label: String,
         val dohUrl: String?,
@@ -250,6 +318,15 @@ class SettingsStore(context: Context) {
         private const val KEY_CUSTOM_DOH_URL = "custom_doh_url"
         private const val KEY_PROXY_ONLY_MODE = "proxy_only_mode"
         private const val KEY_EXCLUDED_APPS = "excluded_apps"
+        private const val KEY_INCLUDED_APPS = "included_apps"
+        private const val KEY_SPLIT_TUNNEL_MODE = "split_tunnel_mode"
+        private const val KEY_UPSTREAM_SOCKS_ENABLED = "upstream_socks_enabled"
+        private const val KEY_UPSTREAM_SOCKS_HOST = "upstream_socks_host"
+        private const val KEY_UPSTREAM_SOCKS_PORT = "upstream_socks_port"
+        private const val KEY_UPSTREAM_SOCKS_USERNAME = "upstream_socks_username"
+        private const val KEY_UPSTREAM_SOCKS_PASSWORD = "upstream_socks_password"
+        private const val KEY_BOOTSTRAP_DOH_ENABLED = "bootstrap_doh_enabled"
+        private const val KEY_TLS_FRAGMENTATION_ENABLED = "tls_fragmentation_enabled"
         const val DEFAULT_SOCKS_BIND_ADDRESS = "127.0.0.1"
         const val DEFAULT_SOCKS_PORT = 1080
         const val DEFAULT_HTTP_PROXY_PORT = 8080

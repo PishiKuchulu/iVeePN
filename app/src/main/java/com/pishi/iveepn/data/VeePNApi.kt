@@ -14,6 +14,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import com.pishi.iveepn.vpn.upstream.FragmentingSocketFactory
+import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -21,6 +23,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
@@ -160,8 +164,59 @@ data class LocationsResult(
  */
 class VeePNApi(
     private val store: TokenStore,
-    private val client: OkHttpClient = defaultClient(),
+    private val baseClient: OkHttpClient = defaultClient(),
+    private val transport: () -> ApiTransportOptions = { ApiTransportOptions.NONE },
 ) {
+
+    @Volatile
+    private var cachedClient: OkHttpClient? = null
+
+    @Volatile
+    private var cachedClientFingerprint: Int = 0
+
+    /** The current transport-options snapshot (fresh from the settings store). */
+    fun currentTransportOptions(): ApiTransportOptions = transport()
+
+    /**
+     * The HTTP client shaped by the current transport options
+     * (upstream SOCKS5 proxy, bootstrap DoH, TLS fragmentation).
+     * Rebuilt only when the options actually change.
+     */
+    private fun effectiveClient(): OkHttpClient {
+        val options = transport()
+        val fingerprint = options.hashCode()
+        cachedClient?.let { if (cachedClientFingerprint == fingerprint) return it }
+        val built = baseClient.newBuilder().apply {
+            options.upstreamProxy?.let { proxyConfig ->
+                proxy(
+                    Proxy(
+                        Proxy.Type.SOCKS,
+                        InetSocketAddress(proxyConfig.host, proxyConfig.port),
+                    ),
+                )
+                if (proxyConfig.username != null) {
+                    proxyAuthenticator { _, response ->
+                        response.request.newBuilder()
+                            .header(
+                                "Proxy-Authorization",
+                                Credentials.basic(
+                                    proxyConfig.username,
+                                    proxyConfig.secret ?: "",
+                                ),
+                            )
+                            .build()
+                    }
+                }
+            }
+            options.bootstrapDohUrl?.let { dns(BootstrapDohDns(it)) }
+            if (options.tlsFragmentation) {
+                socketFactory(FragmentingSocketFactory())
+            }
+        }.build()
+        cachedClient = built
+        cachedClientFingerprint = fingerprint
+        return built
+    }
 
     @Volatile
     private var domainsCache: List<String>? = null
@@ -191,7 +246,7 @@ class VeePNApi(
             if (attempt > 0 && System.nanoTime() > deadline) break
             val domain = domains[attempt % domains.size]
             val response = try {
-                http(domain + LAUNCH_PATH, "POST", body, authToken = null, client)
+                http(domain + LAUNCH_PATH, "POST", body, authToken = null, effectiveClient())
             } catch (e: IOException) {
                 last = "$domain: ${e.message}"
                 delay(minOf(backoffSeconds(attempt), 5) * 1000L)
@@ -306,7 +361,7 @@ class VeePNApi(
             forceFreshToken = false
             val domain = domains[attempt % domains.size]
             val response = try {
-                http(domain + path, method, body, token, client)
+                http(domain + path, method, body, token, effectiveClient())
             } catch (e: IOException) {
                 lastError = "$domain unreachable (${e.message})"
                 delay(minOf(backoffSeconds(attempt), 3) * 1000L)
@@ -384,7 +439,7 @@ class VeePNApi(
     }
 
     private fun fetchReserveDomains(): List<String> {
-        val bucketClient = client.newBuilder()
+        val bucketClient = effectiveClient().newBuilder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()

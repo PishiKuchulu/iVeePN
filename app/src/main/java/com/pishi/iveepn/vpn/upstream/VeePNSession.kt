@@ -27,6 +27,9 @@ class VeePNSession(
     private var closed: Boolean = false
 
     override suspend fun connect() {
+        // Refresh the transport shaping (upstream proxy, TLS
+        // fragmentation) from the settings store for this session.
+        VeePNUpstream.applyTransport(api.currentTransportOptions())
         api.ensureToken()
         val servers = api.serverList(region)
         pool = ServerPool(

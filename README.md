@@ -26,8 +26,9 @@
 * 📍 **Locations Screen:** Free/all tabs, search functionality, optimal-location marker, and selection persisted across launches.
 * 📶 **Pre-connect Ping:** When the locations list loads, every free location is measured before you connect (TCP latency), with a quality indicator per row, a "Fastest" label, fastest-first sorting, and a manual re-test button.
 * 🔄 **Smart Server Pool:** Circuit breaker, rotation, and throttled credential refresh — ported from the desktop client's tunnel factory.
-* 🎯 **Split Tunneling:** Per-app exclusion to bypass the VPN for specific applications.
+* 🎯 **Split Tunneling:** Three per-app modes — all apps through the tunnel, all except selected apps, or only selected apps through the tunnel.
 * ⚙️ **Advanced Options:** Custom MTU, DNS resolver choice (DoH) for the local proxy, in-app log viewer.
+* 🧅 **Transport Options:** Optional upstream SOCKS5 proxy (with sign-in) that connections to VeePN servers transit first, encrypted DoH resolution for the VeePN API domains, and an experimental TLS handshake fragmentation toggle.
 * 🧪 **Connection Test:** "Test connection chain" in Settings runs the full viability chain (guest token → locations → server list → exit IP) with per-step results.
 * 📥 **Honest Updater:** In-app updater shows real HTTP status on failures, never a false "up to date" message.
 
@@ -84,8 +85,9 @@ bash gradlew testDebugUnitTest assembleDebug
 * 📍 **صفحه‌ی لوکیشن‌ها:** تب‌های رایگان/همه، قابلیت جست‌وجو، نشانگر لوکیشن بهینه و ماندگاری انتخاب در اجراهای بعدی.
 * 📶 **پینگ قبل از اتصال:** هنگام بارگذاری فهرست لوکیشن‌ها، تأخیر همه‌ی لوکیشن‌های رایگان قبل از اتصال سنجیده می‌شود (تأخیر TCP)؛ با نشانگر کیفیت کنار هر ردیف، برچسب «سریع‌ترین»، مرتب‌سازی سریع‌ترین‌اول و دکمه‌ی سنجش دوباره.
 * 🔄 **استخر سرور هوشمند:** Circuit breaker، چرخش و تازه‌سازی اعتبارنامه‌ی کنترل‌شده — پورت‌شده از tunnel factory کلاینت دسکتاپ.
-* 🎯 **Split Tunneling:** استثنا کردن برنامه‌های خاص برای دور زدن VPN.
+* 🎯 **Split Tunneling:** سه حالت برای هر برنامه — همهٔ برنامه‌ها از تونل، همه به‌جز برنامه‌های انتخاب‌شده، یا فقط برنامه‌های انتخاب‌شده از تونل.
 * ⚙️ **گزینه‌های پیشرفته:** MTU سفارشی، انتخاب DNS resolver (DoH) برای پروکسی محلی، نمایشگر لاگ داخلی.
+* 🧅 **گزینه‌های انتقال:** پراکسی SOCKS5 بالادستی اختیاری (با امکان ورود) که اتصال به سرورهای VeePN نخست از آن می‌گذرد، پیدا کردن دامنه‌های API با DoH رمزنگاری‌شده، و کلید آزمایشی قطعه‌قطعه‌کردن دست‌دهی TLS.
 * 🧪 **تست اتصال:** "Test connection chain" در تنظیمات، زنجیره‌ی کامل قابلیت (توکن مهمان → لوکیشن‌ها → لیست سرور → IP خروجی) را با نتایج هر مرحله اجرا می‌کند.
 * 📥 **آپدیتر صادق:** آپدیتر داخلی در صورت شکست، وضعیت HTTP واقعی را نشان می‌دهد، نه پیام دروغین "به‌روز است".
 

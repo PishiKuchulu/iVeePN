@@ -458,6 +458,8 @@ class IVeePNVpnService : VpnService() {
             val httpProxyEnabled = settingsStore.httpProxyEnabled
             var proxyOnlyMode = settingsStore.proxyOnlyMode
             val excludedApps = settingsStore.excludedApps
+            val includedApps = settingsStore.includedApps
+            val splitMode = settingsStore.splitTunnelMode
             val dohUrl = settingsStore.effectiveDohUrl
 
             AppLogger.i(TAG, "connect: region=$region proxyOnly=$proxyOnlyMode")
@@ -510,7 +512,7 @@ class IVeePNVpnService : VpnService() {
                         "local proxy at $socksBindAddress:$socksPort",
                 )
             } else {
-                val fd = establishTun(excludedApps, dohUrl, mtu = settingsStore.mtu)
+                val fd = establishTun(splitMode, excludedApps, includedApps, dohUrl, mtu = settingsStore.mtu)
                 if (fd == null) {
                     // Explicit TUN failure behaviour: with the opt-in
                     // fallback enabled, fall back LOUDLY to proxy-only
@@ -753,7 +755,9 @@ class IVeePNVpnService : VpnService() {
     }
 
     private fun establishTun(
+        splitMode: SettingsStore.SplitTunnelMode,
         excludedApps: Set<String>,
+        includedApps: Set<String>,
         dohUrl: String?,
         mtu: Int = HevSocks5TunnelConfig.TUN_MTU,
     ): ParcelFileDescriptor? {
@@ -804,11 +808,19 @@ class IVeePNVpnService : VpnService() {
             // Saver and per-app data policies keep working as the user
             // configured them on a metered connection.
             .apply {
-                runCatching { addDisallowedApplication(packageName) }
-                    .onFailure { AppLogger.w(TAG, "failed to exclude own app from the VPN tunnel", it) }
-                for (excludedPackage in excludedApps) {
-                    runCatching { addDisallowedApplication(excludedPackage) }
-                        .onFailure { AppLogger.w(TAG, "failed to exclude $excludedPackage from the VPN tunnel (app may be uninstalled)", it) }
+                val plan = splitTunnelPlan(splitMode, excludedApps, includedApps, packageName)
+                AppLogger.i(
+                    TAG,
+                    "establishTun: split mode=$splitMode allowed=${plan.allowedApps.size} " +
+                        "disallowed=${plan.disallowedApps.size}",
+                )
+                for (allowedPackage in plan.allowedApps) {
+                    runCatching { addAllowedApplication(allowedPackage) }
+                        .onFailure { AppLogger.w(TAG, "failed to route $allowedPackage through the VPN tunnel (app may be uninstalled)", it) }
+                }
+                for (disallowedPackage in plan.disallowedApps) {
+                    runCatching { addDisallowedApplication(disallowedPackage) }
+                        .onFailure { AppLogger.w(TAG, "failed to exclude $disallowedPackage from the VPN tunnel (app may be uninstalled)", it) }
                 }
             }
             .establish()

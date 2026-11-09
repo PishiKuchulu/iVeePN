@@ -1,5 +1,47 @@
 # Changelog
 
+## iVeePN 1.0.9 (versionCode 10) — transport options (user-requested)
+
+From a user's anti-censorship feature comparison, the items that are
+implementable on the VeePN guest network (client-side, no server
+cooperation needed):
+
+- **Upstream SOCKS5 proxy**: connections to VeePN servers — and the
+  VeePN API — can transit a user-configured SOCKS5 proxy first
+  (host/port, optional username/password per RFC 1929; credentials
+  are kept in the encrypted store). A minimal in-app SOCKS5 client
+  (RFC 1928) opens the server connection; the API client uses the
+  same proxy natively. Handshake failures surface as connection
+  failures — there is no silent direct fallback.
+- **Encrypted bootstrap DNS for the API**: API domains can resolve
+  through the configured DoH provider instead of the system
+  resolver, so DNS tampering cannot strand the app before the
+  tunnel exists. Falls back to system DNS if DoH yields nothing.
+- **TLS handshake fragmentation (experimental, off by default)**:
+  segments the TLS ClientHello of VeePN-bound connections.
+
+Not implementable on this network (server-side properties of the
+VeePN endpoints, which offer HTTPS CONNECT only): alternative
+transports (HTTP/2, HTTP/3/QUIC, MASQUE), relay servers, ECH, and a
+uTLS-style fingerprint swap (the platform TLS stack stays).
+
+## iVeePN 1.0.8 (versionCode 9) — split tunneling allow-list mode
+
+User-requested feature: split tunneling gains the missing direction.
+
+- Split tunneling is now a three-way mode in Settings: **all apps**
+  use the tunnel, **all apps except selected** (the previous
+  behaviour, kept as the default so existing selections carry over),
+  or **only selected apps** use the tunnel — the new allow-list mode,
+  implemented with the platform's `addAllowedApplication`. Each mode
+  keeps its own app selection.
+- The app itself is never routed through its own tunnel in any mode,
+  and an only-selected mode with an effectively empty selection can
+  neither be saved in the UI nor produce a dead tunnel: the routing
+  plan falls back to all-apps instead.
+- Routing decisions are factored into a pure, unit-tested plan
+  (`splitTunnelPlan`, 7 tests).
+
 ## iVeePN 1.0.7 (versionCode 8) — audit-5 fix wave
 
 Fixes from the fifth external audit, verified against the source (and,

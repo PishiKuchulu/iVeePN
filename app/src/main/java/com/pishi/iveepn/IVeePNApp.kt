@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.res.Configuration
 import android.os.Build
+import com.pishi.iveepn.data.ApiTransportOptions
 import com.pishi.iveepn.data.CrashReporter
 import com.pishi.iveepn.data.SelectedLocationStore
 import com.pishi.iveepn.data.SettingsStore
@@ -20,7 +21,12 @@ class IVeePNApp : Application() {
     // (Android Keystore work), which must not sit on the main thread in
     // Application.onCreate. First actual use builds both.
     val tokenStore: TokenStore by lazy { TokenStore(this) }
-    val veePNApi: VeePNApi by lazy { VeePNApi(tokenStore) }
+    val veePNApi: VeePNApi by lazy {
+        VeePNApi(
+            tokenStore,
+            transport = { ApiTransportOptions.fromStore(settingsStore) },
+        )
+    }
 
     lateinit var settingsStore: SettingsStore
     lateinit var selectedLocationStore: SelectedLocationStore

@@ -102,6 +102,9 @@ fun SettingsScreen(
     var proxyOnly by remember { mutableStateOf(settings.proxyOnlyMode) }
     var tunFallback by remember { mutableStateOf(settings.tunFallbackToProxy) }
     var httpProxy by remember { mutableStateOf(settings.httpProxyEnabled) }
+    var upstreamSocks by remember { mutableStateOf(settings.upstreamSocksEnabled) }
+    var bootstrapDoh by remember { mutableStateOf(settings.bootstrapDohEnabled) }
+    var tlsFragmentation by remember { mutableStateOf(settings.tlsFragmentationEnabled) }
     var dnsProvider by remember { mutableStateOf(settings.dnsProvider) }
     var language by remember { mutableStateOf(settings.appLanguage) }
 
@@ -111,7 +114,9 @@ fun SettingsScreen(
     var retryingStep by remember { mutableStateOf<ChainStepId?>(null) }
     var numberDialog by remember { mutableStateOf<NumberField?>(null) }
     var textDialog by remember { mutableStateOf<TextField?>(null) }
-    var showExcludedApps by remember { mutableStateOf(false) }
+    var showSplitApps by remember { mutableStateOf(false) }
+    var showSplitMode by remember { mutableStateOf(false) }
+    var splitMode by remember { mutableStateOf(settings.splitTunnelMode) }
     var showDnsPicker by remember { mutableStateOf(false) }
     var showLanguagePicker by remember { mutableStateOf(false) }
     var pendingBindValue by remember { mutableStateOf<String?>(null) }
@@ -227,6 +232,92 @@ fun SettingsScreen(
                         stringResource(R.string.settings_selected_region),
                         settings.lastRegion.uppercase(),
                         onNavigateToLocations,
+                    )
+                }
+
+                SettingsSection(R.string.settings_section_transport) {
+                    SwitchRow(stringResource(R.string.settings_upstream_socks), upstreamSocks) {
+                        upstreamSocks = it
+                        settings.upstreamSocksEnabled = it
+                    }
+                    if (upstreamSocks) {
+                        ValueRow(
+                            stringResource(R.string.settings_upstream_host),
+                            settings.upstreamSocksHost.ifBlank {
+                                stringResource(R.string.settings_not_set)
+                            },
+                        ) {
+                            textDialog = TextField(
+                                R.string.settings_upstream_host,
+                                settings.upstreamSocksHost,
+                                R.string.settings_upstream_host_supporting,
+                                R.string.settings_upstream_host_supporting,
+                                validate = { true },
+                            ) { settings.upstreamSocksHost = it }
+                        }
+                        ValueRow(
+                            stringResource(R.string.settings_upstream_port),
+                            settings.upstreamSocksPort.toString(),
+                        ) {
+                            numberDialog = NumberField(
+                                R.string.settings_upstream_port,
+                                settings.upstreamSocksPort,
+                                1,
+                                65535,
+                            ) { settings.upstreamSocksPort = it }
+                        }
+                        ValueRow(
+                            stringResource(R.string.settings_upstream_username),
+                            settings.upstreamSocksUsername.ifBlank {
+                                stringResource(R.string.settings_not_set)
+                            },
+                        ) {
+                            textDialog = TextField(
+                                R.string.settings_upstream_username,
+                                settings.upstreamSocksUsername,
+                                R.string.settings_upstream_username_supporting,
+                                R.string.settings_upstream_username_supporting,
+                                validate = { true },
+                            ) { settings.upstreamSocksUsername = it }
+                        }
+                        ValueRow(
+                            stringResource(R.string.settings_upstream_secret),
+                            if (settings.upstreamSocksPassword.isEmpty()) {
+                                stringResource(R.string.settings_not_set)
+                            } else {
+                                "••••••••"
+                            },
+                        ) {
+                            textDialog = TextField(
+                                R.string.settings_upstream_secret,
+                                settings.upstreamSocksPassword,
+                                R.string.settings_upstream_secret_supporting,
+                                R.string.settings_upstream_secret_supporting,
+                                validate = { true },
+                                onSave = { settings.upstreamSocksPassword = it },
+                                secret = true,
+                            )
+                        }
+                    }
+                    SwitchRow(stringResource(R.string.settings_bootstrap_doh), bootstrapDoh) {
+                        bootstrapDoh = it
+                        settings.bootstrapDohEnabled = it
+                    }
+                    Text(
+                        stringResource(R.string.settings_bootstrap_doh_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = Spacing.md),
+                    )
+                    SwitchRow(stringResource(R.string.settings_tls_fragmentation), tlsFragmentation) {
+                        tlsFragmentation = it
+                        settings.tlsFragmentationEnabled = it
+                    }
+                    Text(
+                        stringResource(R.string.settings_tls_fragmentation_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = Spacing.md),
                     )
                 }
 
@@ -347,12 +438,26 @@ fun SettingsScreen(
 
                 SettingsSection(R.string.settings_section_split) {
                     ValueRow(
-                        stringResource(R.string.settings_excluded_apps),
-                        stringResource(
-                            R.string.settings_excluded_apps_count,
-                            settings.excludedApps.size,
-                        ),
-                    ) { showExcludedApps = true }
+                        stringResource(R.string.settings_split_mode),
+                        splitModeLabel(splitMode),
+                    ) { showSplitMode = true }
+                    when (splitMode) {
+                        SettingsStore.SplitTunnelMode.EXCLUDE_SELECTED -> ValueRow(
+                            stringResource(R.string.settings_excluded_apps),
+                            stringResource(
+                                R.string.settings_excluded_apps_count,
+                                settings.excludedApps.size,
+                            ),
+                        ) { showSplitApps = true }
+                        SettingsStore.SplitTunnelMode.ONLY_SELECTED -> ValueRow(
+                            stringResource(R.string.settings_included_apps),
+                            stringResource(
+                                R.string.settings_excluded_apps_count,
+                                settings.includedApps.size,
+                            ),
+                        ) { showSplitApps = true }
+                        SettingsStore.SplitTunnelMode.ALL -> Unit
+                    }
                 }
 
                 SettingsSection(R.string.settings_section_about) {
@@ -497,8 +602,54 @@ fun SettingsScreen(
             },
         )
     }
-    if (showExcludedApps) {
-        ExcludedAppsDialog(app) { showExcludedApps = false }
+    if (showSplitApps) {
+        SplitAppsDialog(
+            app = app,
+            onlySelected = splitMode == SettingsStore.SplitTunnelMode.ONLY_SELECTED,
+        ) { showSplitApps = false }
+    }
+    if (showSplitMode) {
+        AlertDialog(
+            onDismissRequest = { showSplitMode = false },
+            title = { Text(stringResource(R.string.settings_split_mode)) },
+            text = {
+                Column {
+                    SettingsStore.SplitTunnelMode.entries.forEach { mode ->
+                        val select = {
+                            splitMode = mode
+                            settings.splitTunnelMode = mode
+                            showSplitMode = false
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = mode == splitMode,
+                                    role = Role.RadioButton,
+                                    onClick = select,
+                                )
+                                .heightIn(min = Spacing.touchTarget)
+                                .padding(vertical = Spacing.sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = mode == splitMode,
+                                onClick = select,
+                            )
+                            Text(
+                                splitModeLabel(mode),
+                                modifier = Modifier.padding(start = Spacing.sm),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSplitMode = false }) {
+                    Text(stringResource(R.string.common_close))
+                }
+            },
+        )
     }
     if (chainDialogOpen) {
         AlertDialog(
@@ -760,6 +911,7 @@ private class TextField(
     @StringRes val errorRes: Int,
     val validate: (String) -> Boolean,
     val onSave: (String) -> Unit,
+    val secret: Boolean = false,
 )
 
 @Composable
@@ -832,6 +984,11 @@ private fun TextEditDialog(field: TextField, onDismiss: () -> Unit) {
                 },
                 isError = !valid,
                 singleLine = true,
+                visualTransformation = if (field.secret) {
+                    androidx.compose.ui.text.input.PasswordVisualTransformation()
+                } else {
+                    androidx.compose.ui.text.input.VisualTransformation.None
+                },
             )
         },
         confirmButton = {
@@ -852,7 +1009,21 @@ private fun TextEditDialog(field: TextField, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ExcludedAppsDialog(app: IVeePNApp, onDismiss: () -> Unit) {
+private fun splitModeLabel(mode: SettingsStore.SplitTunnelMode): String =
+    stringResource(
+        when (mode) {
+            SettingsStore.SplitTunnelMode.ALL -> R.string.split_mode_all
+            SettingsStore.SplitTunnelMode.EXCLUDE_SELECTED -> R.string.split_mode_exclude
+            SettingsStore.SplitTunnelMode.ONLY_SELECTED -> R.string.split_mode_only
+        },
+    )
+
+@Composable
+private fun SplitAppsDialog(
+    app: IVeePNApp,
+    onlySelected: Boolean,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     // Audit row 18: the installed-app list is loaded off the main
     // thread; the dialog shows a loading state, then a searchable list.
@@ -868,11 +1039,21 @@ private fun ExcludedAppsDialog(app: IVeePNApp, onDismiss: () -> Unit) {
                 .map { it.packageName to pm.getApplicationLabel(it).toString() }
         }
     }
-    var excluded by remember { mutableStateOf(app.settingsStore.excludedApps) }
+    var selected by remember {
+        mutableStateOf(
+            if (onlySelected) app.settingsStore.includedApps else app.settingsStore.excludedApps,
+        )
+    }
     var search by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.excluded_title)) },
+        title = {
+            Text(
+                stringResource(
+                    if (onlySelected) R.string.included_title else R.string.excluded_title,
+                ),
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 OutlinedTextField(
@@ -890,6 +1071,13 @@ private fun ExcludedAppsDialog(app: IVeePNApp, onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (onlySelected) {
+                    Text(
+                        stringResource(R.string.split_only_empty_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 val apps = installed
                 when {
                     apps == null -> Row(
@@ -914,8 +1102,8 @@ private fun ExcludedAppsDialog(app: IVeePNApp, onDismiss: () -> Unit) {
                             LazyColumn(modifier = Modifier.fillMaxWidth()) {
                                 items(filtered, key = { it.first }) { (pkg, label) ->
                                     val toggle = {
-                                        excluded =
-                                            if (pkg in excluded) excluded - pkg else excluded + pkg
+                                        selected =
+                                            if (pkg in selected) selected - pkg else selected + pkg
                                     }
                                     Row(
                                         modifier = Modifier
@@ -926,7 +1114,7 @@ private fun ExcludedAppsDialog(app: IVeePNApp, onDismiss: () -> Unit) {
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Checkbox(
-                                            checked = pkg in excluded,
+                                            checked = pkg in selected,
                                             onCheckedChange = { toggle() },
                                         )
                                         Text(
@@ -942,10 +1130,19 @@ private fun ExcludedAppsDialog(app: IVeePNApp, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                app.settingsStore.excludedApps = excluded
-                onDismiss()
-            }) { Text(stringResource(R.string.common_save)) }
+            TextButton(
+                onClick = {
+                    if (onlySelected) {
+                        app.settingsStore.includedApps = selected
+                    } else {
+                        app.settingsStore.excludedApps = selected
+                    }
+                    onDismiss()
+                },
+                // In only-selected mode an empty selection is refused:
+                // the tunnel would serve no app at all.
+                enabled = !onlySelected || selected.isNotEmpty(),
+            ) { Text(stringResource(R.string.common_save)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {

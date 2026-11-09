@@ -1,5 +1,7 @@
 package com.pishi.iveepn.vpn.upstream
 
+import com.pishi.iveepn.data.ApiTransportOptions
+import com.pishi.iveepn.data.UpstreamProxyConfig
 import com.pishi.iveepn.data.UserAgent
 import com.pishi.iveepn.data.model.VeePNServer
 import java.io.IOException
@@ -106,6 +108,23 @@ object ConnectRequest {
  * there is deliberately no way to relax verification here.
  */
 object VeePNUpstream {
+
+    /**
+     * Transport shaping applied to new upstream sockets, refreshed by
+     * the session layer from the settings store at every connect:
+     * an optional upstream SOCKS5 proxy to transit first, and the
+     * experimental TLS ClientHello segmentation toggle.
+     */
+    @Volatile
+    var upstreamProxy: UpstreamProxyConfig? = null
+
+    @Volatile
+    var tlsFragmentation: Boolean = false
+
+    fun applyTransport(options: ApiTransportOptions) {
+        upstreamProxy = options.upstreamProxy
+        tlsFragmentation = options.tlsFragmentation
+    }
 
     private const val MAX_HEAD_BYTES = 16 * 1024
     private const val MAX_HEAD_LINES = 64
@@ -299,13 +318,24 @@ object VeePNUpstream {
     }
 
     private fun openTlsSocket(address: String, port: Int, timeoutMs: Int): SSLSocket {
-        val plain = Socket()
+        // With an upstream SOCKS5 proxy configured, the TCP stream to
+        // the VeePN server is opened through it (handshake first, then
+        // TLS over the tunnel as usual). Without one, connect directly.
+        val raw: Socket = upstreamProxy?.let { proxy ->
+            Socks5Connector.connect(proxy, address, port, timeoutMs)
+        } ?: Socket().apply {
+            connect(InetSocketAddress(address, port), timeoutMs)
+        }
         try {
-            plain.connect(InetSocketAddress(address, port), timeoutMs)
-            plain.soTimeout = timeoutMs
+            raw.soTimeout = timeoutMs
+            val plain: Socket = if (tlsFragmentation) {
+                FragmentingSocket(raw).apply { armFragmentation() }
+            } else {
+                raw
+            }
             return wrapTls(plain, address, port).apply { soTimeout = timeoutMs }
         } catch (e: IOException) {
-            closeQuietly(plain)
+            closeQuietly(raw)
             throw e
         }
     }
