@@ -1,18 +1,9 @@
 package com.pishi.iveepn.ui.components
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
@@ -30,17 +21,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -53,44 +48,48 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pishi.iveepn.ui.theme.rememberAnimationsEnabled
 import java.util.Locale
-import kotlin.math.PI
+import kotlin.math.exp
 import kotlin.math.sin
 import kotlinx.coroutines.delay
 
 /**
- * Animated VPN connect button — robot artwork supplied by the project
- * owner (ConnectRobotButton), integrated behind the existing
+ * Animated VPN connect button — expressive robot artwork (v2) supplied
+ * by the project owner, integrated behind the existing
  * controlled-widget API:
  *
- *  - disconnected: outline robot head with green eyes that blink;
- *  - connecting: a 3x3 dot loader with a highlight rolling around the
- *    ring and a breathing centre dot;
- *  - connected: a filled mint blob that drops in with a spring bounce
- *    over its own shadow.
+ *  - disconnected: a sleepy robot that looks around, blinks, yawns
+ *    and stretches on a 9-second behaviour loop;
+ *  - connecting: the robot folds into a 3x3 dot loader with a
+ *    rolling wave;
+ *  - connected: a happy filled robot that hops with squash and
+ *    stretch, wiggles, smiles and sparkles.
  *
+ * Every state is a pose function of time and the three poses are
+ * blended frame by frame, so state changes morph instead of cutting.
  * The caller owns [state] and [onClick]; the label block under the
  * artwork (titles/subtitle, or the live HH:MM:SS session timer while
- * connected) is unchanged from the previous design. Label colours
- * follow the Material colour scheme; the painted robot keeps its
- * fixed palette in both themes, except the loader dots, which take
- * the scheme's on-surface colour so they stay visible on the light
- * background (the reference artwork assumed a dark screen).
- * Animations honour the system animator setting via
- * [rememberAnimationsEnabled]: with animations off, the robot is
- * static (eyes open, loader frozen, blob already landed).
+ * connected) is unchanged. Label colours follow the Material colour
+ * scheme; the painted robot keeps its fixed palette in both themes,
+ * except the loader dots and sparkles, which take the scheme's
+ * on-surface colour so they stay visible on the light background
+ * (the reference artwork assumed a dark screen). With system
+ * animations off ([rememberAnimationsEnabled]), the frame loop stops
+ * and each state shows one static pose.
  */
 enum class VpnButtonState { Disconnected, Connecting, Connected }
 
 // Robot palette, sampled from the owner's reference video.
-private val MintGreen = Color(0xFF54F891)
-private val MintGreenDeep = Color(0xFF3BD38D)
-private val EyeGreen = Color(0xFF4CFC88)
+private val MintFill = Color(0xFF50EE92)
 private val OutlineGrey = Color(0xFFC6C9D4)
+private val EyeGreen = Color(0xFF4CFC88)
 private val ShadowGreen = Color(0xFF27865D)
 
-// Robot shapes are drawn in design units, (0, 0) at the centre;
-// one unit is roughly one pixel of the 240x180 reference video.
-private const val DESIGN_UNITS = 64f
+private const val UNITS = 64f          // design units across the canvas, (0, 0) = robot centre
+private const val PI_F = 3.1415927f
+private const val TWO_PI = 6.2831855f
+private const val RATE = 6.5f          // blend speed between states (per second)
+private const val OFF_LOOP = 9f        // length of the idle behaviour loop (seconds)
+private const val HOP_PERIOD = 0.95f   // one happy hop (seconds)
 
 @Composable
 fun VpnConnectButton(
@@ -111,6 +110,23 @@ fun VpnConnectButton(
     // inside the semantics {} block below, `stateDescription` still resolves
     // to the receiver's settable property instead of a shadowing val.
 
+    val animator = remember { RobotAnimator() }
+    LaunchedEffect(state, animationsEnabled) {
+        if (animationsEnabled) {
+            animator.setState(state.ordinal)
+        } else {
+            animator.snapTo(state.ordinal, staticLocalTime(state))
+        }
+    }
+    LaunchedEffect(animator, animationsEnabled) {
+        if (animationsEnabled) {
+            while (true) {
+                withFrameNanos { nanos -> animator.tick(nanos) }
+            }
+        }
+    }
+    val dotColor = MaterialTheme.colorScheme.onSurface
+
     // Session timer tick (only while connected).
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state, connectedAtEpochMs) {
@@ -126,37 +142,24 @@ fun VpnConnectButton(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        AnimatedContent(
-            targetState = state,
-            transitionSpec = {
-                (fadeIn(animationSpec = tween(450)) +
-                    scaleIn(initialScale = 0.86f, animationSpec = tween(450)))
-                    .togetherWith(fadeOut(animationSpec = tween(450)) +
-                        scaleOut(targetScale = 0.86f, animationSpec = tween(450)))
-            },
-            label = "vpnButtonDisc",
-        ) { targetState ->
-            Box(
-                modifier = Modifier
-                    .size(size)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onClick()
-                    }
-                    .semantics {
-                        role = Role.Button
-                        stateDescription = stateDesc
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                when (targetState) {
-                    VpnButtonState.Disconnected -> IdleRobot(animationsEnabled, Modifier.fillMaxSize())
-                    VpnButtonState.Connecting -> LoadingRobot(animationsEnabled, Modifier.fillMaxSize())
-                    VpnButtonState.Connected -> ActiveRobot(animationsEnabled, Modifier.fillMaxSize())
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
                 }
+                .semantics {
+                    role = Role.Button
+                    stateDescription = stateDesc
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.fillMaxSize()) {
+                drawRobot(animator, dotColor)
             }
         }
 
@@ -189,6 +192,13 @@ fun VpnConnectButton(
             }
         }
     }
+}
+
+/** The frozen local time used for each state when animations are off. */
+private fun staticLocalTime(state: VpnButtonState): Float = when (state) {
+    VpnButtonState.Disconnected -> 0.4f  // neutral, before the first look-around
+    VpnButtonState.Connecting -> 0f
+    VpnButtonState.Connected -> HOP_PERIOD / 2f  // mid-hop, in the air
 }
 
 @Composable
@@ -226,145 +236,298 @@ private fun formatSessionHhMmSs(connectedAtEpochMs: Long?, nowMs: Long): String 
 }
 
 // ---------------------------------------------------------------------------
-// Robot artwork (owner-supplied; see the file header for the adaptations)
+// Robot engine (owner-supplied v2; see the file header for the adaptations)
 // ---------------------------------------------------------------------------
 
-/** Disconnected: outline head with green eyes that blink every ~3.2 s. */
-@Composable
-private fun IdleRobot(animate: Boolean, modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "idle")
-    val animatedEyeOpen by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = 3200
-                1f at 0
-                1f at 2900
-                0.1f at 3000 // eyes closed
-                1f at 3150
-            },
-        ),
-        label = "blink",
-    )
-    val eyeOpen = if (animate) animatedEyeOpen else 1f
+private val LOADER_RING = listOf(
+    -1f to -1f, 0f to -1f, 1f to -1f, 1f to 0f,
+    1f to 1f, 0f to 1f, -1f to 1f, -1f to 0f,
+)
+private val SPARKLE_POINTS = listOf(-28f to -14f, 27f to -16f, -29f to 7f, 28f to 8f)
 
-    Canvas(modifier) {
-        val k = size.minDimension / DESIGN_UNITS
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        withTransform({
-            translate(cx, cy)
-            scale(k, k, Offset.Zero)
-        }) {
-            drawRoundRect(
-                color = OutlineGrey,
-                topLeft = Offset(-22f, -19f),
-                size = Size(44f, 38f),
-                cornerRadius = CornerRadius(16f),
-                style = Stroke(width = 1.3f),
-            )
-            val eyeHeight = 10f * eyeOpen
-            drawOval(EyeGreen, topLeft = Offset(-14f, -2f - eyeHeight / 2f), size = Size(6.5f, eyeHeight))
-            drawOval(EyeGreen, topLeft = Offset(7.5f, -2f - eyeHeight / 2f), size = Size(6.5f, eyeHeight))
+private fun clamp01(x: Float): Float = x.coerceIn(0f, 1f)
+
+private fun smoothstep(e0: Float, e1: Float, x: Float): Float {
+    val t = clamp01((x - e0) / (e1 - e0))
+    return t * t * (3f - 2f * t)
+}
+
+private fun window(x: Float, a1: Float, a2: Float, b1: Float, b2: Float): Float =
+    smoothstep(a1, a2, x) * (1f - smoothstep(b1, b2, x))
+
+private fun blinkCurve(c: Float, center: Float, duration: Float): Float {
+    val u = (c - (center - duration / 2f)) / duration
+    return if (u in 0f..1f) sin(PI_F * u) else 0f
+}
+
+private class Pose(
+    val bodyY: Float, val sx: Float, val sy: Float, val rot: Float,
+    val bodyAlpha: Float, val fill: Float, val faceAlpha: Float,
+    val eyeOpen: Float, val eyeX: Float, val eyeY: Float, val happy: Float,
+    val mouthCy: Float, val mouthRx: Float, val mouthRy: Float, val mouthFill: Float,
+    val shadowAlpha: Float, val shadowScale: Float,
+    val dotAlpha: Float, val spread: Float,
+    val sparkle: Float,
+)
+
+// Disconnected: looks left, right and up, blinks, droops, then yawns with a stretch and a tilt
+private fun poseOff(t: Float): Pose {
+    val c = t % OFF_LOOP
+    val lookL = window(c, 0.6f, 1.1f, 1.7f, 2.2f)
+    val lookR = window(c, 3.0f, 3.5f, 4.2f, 4.7f)
+    val lookU = window(c, 4.7f, 5.1f, 5.5f, 5.9f)
+    val blink = blinkCurve(c, 2.5f, 0.22f)
+    val droop = window(c, 6.1f, 6.6f, 7.6f, 8.1f)
+    val yawn = window(c, 6.4f, 7.2f, 7.8f, 8.5f)
+    val stretch = window(c, 6.2f, 6.9f, 7.8f, 8.6f)
+    val tilt = window(c, 6.6f, 7.2f, 7.8f, 8.4f)
+    return Pose(
+        bodyY = 0.35f * sin(TWO_PI * t / 3.2f) - stretch,
+        sx = 1f - 0.03f * stretch,
+        sy = 1f + 0.06f * stretch,
+        rot = -4f * tilt + 1.2f * sin(TWO_PI * t / 4f),
+        bodyAlpha = 1f, fill = 0f, faceAlpha = 1f,
+        eyeOpen = (1f - 0.92f * blink) * (1f - 0.5f * droop),
+        eyeX = -3.2f * lookL + 3.2f * lookR,
+        eyeY = -2f - 1.2f * lookU + 0.6f * droop,
+        happy = 0f,
+        mouthCy = 7f + 0.3f * yawn,
+        mouthRx = 2.4f + 0.6f * yawn,
+        mouthRy = 0.12f + 3.2f * yawn,
+        mouthFill = 0f,
+        shadowAlpha = 0f, shadowScale = 1f,
+        dotAlpha = 0f, spread = 0.25f,
+        sparkle = 0f,
+    )
+}
+
+// Connecting: the body folds away while the dots spread out
+private fun poseLoad(): Pose = Pose(
+    bodyY = 0f, sx = 0.5f, sy = 0.5f, rot = 0f,
+    bodyAlpha = 0f, fill = 0f, faceAlpha = 0f,
+    eyeOpen = 1f, eyeX = 0f, eyeY = -2f, happy = 0f,
+    mouthCy = 7f, mouthRx = 2.4f, mouthRy = 0.12f, mouthFill = 0f,
+    shadowAlpha = 0f, shadowScale = 1f,
+    dotAlpha = 1f, spread = 1f,
+    sparkle = 0f,
+)
+
+// Connected: hops with squash and stretch, wiggles, smiles and sparkles
+private fun poseOn(t: Float): Pose {
+    val x = (t % HOP_PERIOD) / HOP_PERIOD
+    val d = minOf(x, 1f - x)
+    val contact = 1f - smoothstep(0f, 0.12f, d)
+    val air = smoothstep(0.12f, 0.32f, d)
+    val hop = 8.5f + 3.5f * exp(-t / 0.8f)
+    val yOff = -hop * sin(PI_F * x)
+    val sy = 1f - 0.12f * contact + 0.05f * air
+    val sx = 1f + 0.09f * contact - 0.03f * air
+    val airFrac = clamp01(-yOff / hop)
+    return Pose(
+        bodyY = yOff + 18f * (1f - sy),
+        sx = sx, sy = sy,
+        rot = 9f * sin(TWO_PI * t / (2f * HOP_PERIOD)),
+        bodyAlpha = 1f, fill = 1f, faceAlpha = 1f,
+        eyeOpen = 1f, eyeX = 0f, eyeY = -2f, happy = 1f,
+        mouthCy = 7f, mouthRx = 2.9f, mouthRy = 1.2f + 1.2f * air, mouthFill = 1f,
+        shadowAlpha = 0.9f * (1f - 0.5f * airFrac),
+        shadowScale = 1f - 0.3f * airFrac,
+        dotAlpha = 0f, spread = 0.25f,
+        sparkle = smoothstep(0f, 0.3f, t) * (0.6f + 0.4f * sin(TWO_PI * 1.5f * t)),
+    )
+}
+
+private fun mix(a: Pose, b: Pose, c: Pose, w: FloatArray): Pose {
+    fun pick(f: (Pose) -> Float) = w[0] * f(a) + w[1] * f(b) + w[2] * f(c)
+    return Pose(
+        bodyY = pick { it.bodyY }, sx = pick { it.sx }, sy = pick { it.sy }, rot = pick { it.rot },
+        bodyAlpha = pick { it.bodyAlpha }, fill = pick { it.fill }, faceAlpha = pick { it.faceAlpha },
+        eyeOpen = pick { it.eyeOpen }, eyeX = pick { it.eyeX }, eyeY = pick { it.eyeY },
+        happy = pick { it.happy },
+        mouthCy = pick { it.mouthCy }, mouthRx = pick { it.mouthRx }, mouthRy = pick { it.mouthRy },
+        mouthFill = pick { it.mouthFill },
+        shadowAlpha = pick { it.shadowAlpha }, shadowScale = pick { it.shadowScale },
+        dotAlpha = pick { it.dotAlpha }, spread = pick { it.spread },
+        sparkle = pick { it.sparkle },
+    )
+}
+
+// Keeps the clock and the blend weights between the three states, updated every frame
+private class RobotAnimator {
+    var now by mutableStateOf(0f)
+        private set
+
+    private val weights = floatArrayOf(1f, 0f, 0f)   // disconnected, connecting, connected
+    private val targets = floatArrayOf(1f, 0f, 0f)
+    private val entered = floatArrayOf(0f, 0f, 0f)   // time each state was entered
+    private var state = 0
+    private var origin = -1L
+    private var last = 0f
+
+    fun setState(index: Int) {
+        if (index == state) return
+        state = index
+        entered[index] = now
+        for (i in targets.indices) targets[i] = if (i == index) 1f else 0f
+    }
+
+    /** Jumps straight to [index], frozen at [localTime] in that state's loop. */
+    fun snapTo(index: Int, localTime: Float) {
+        state = index
+        entered[index] = now - localTime
+        for (i in targets.indices) {
+            targets[i] = if (i == index) 1f else 0f
+            weights[i] = targets[i]
         }
+    }
+
+    fun tick(nanos: Long) {
+        if (origin < 0L) origin = nanos
+        val t = (nanos - origin) / 1_000_000_000f
+        val dt = (t - last).coerceIn(0f, 0.05f)
+        last = t
+        val k = 1f - exp(-RATE * dt)
+        for (i in weights.indices) weights[i] += (targets[i] - weights[i]) * k
+        now = t
+    }
+
+    fun pose(): Pose = mix(
+        poseOff(now - entered[0]),
+        poseLoad(),
+        poseOn(now - entered[2]),
+        weights,
+    )
+
+    fun loadTime(): Float = now - entered[1]
+    fun onTime(): Float = now - entered[2]
+}
+
+private fun DrawScope.drawRobot(animator: RobotAnimator, dotColor: Color) {
+    val p = animator.pose()
+    val loadT = animator.loadTime()
+    val onT = animator.onTime()
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    val k = size.minDimension / UNITS
+    withTransform({
+        translate(cx, cy)
+        scale(k, k, Offset.Zero)
+    }) {
+        if (p.shadowAlpha > 0.002f) {
+            drawOval(
+                color = ShadowGreen.copy(alpha = p.shadowAlpha),
+                topLeft = Offset(-17f * p.shadowScale, 19.2f - 2.5f * p.shadowScale),
+                size = Size(34f * p.shadowScale, 5f * p.shadowScale),
+            )
+        }
+        withTransform({
+            translate(0f, p.bodyY)
+            rotate(p.rot, Offset.Zero)
+            scale(p.sx, p.sy, Offset.Zero)
+        }) {
+            drawBody(p)
+            drawFace(p)
+        }
+        drawLoaderDots(p, loadT, dotColor)
+        drawSparkles(p, onT, dotColor)
     }
 }
 
-// Clockwise path around the 3x3 grid (centre dot is drawn separately).
-private val LoaderRing = listOf(
-    -1f to -1f, 0f to -1f, 1f to -1f, // top row, left to right
-    1f to 0f, 1f to 1f,               // right column, downward
-    0f to 1f, -1f to 1f, -1f to 0f,   // bottom row, then left column
-)
-
-/** Connecting: nine dots with a highlight rolling around the ring. */
-@Composable
-private fun LoadingRobot(animate: Boolean, modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "loading")
-    val animatedPhase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 8f, // 8 ring steps per loop
-        animationSpec = infiniteRepeatable(tween(durationMillis = 1600, easing = LinearEasing)),
-        label = "phase",
-    )
-    val phase = if (animate) animatedPhase else 0f
-    val dotColor = MaterialTheme.colorScheme.onSurface
-
-    Canvas(modifier) {
-        val k = size.minDimension / DESIGN_UNITS
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val spacing = 12.5f * k
-        val dotRadius = 2.2f * k
-
-        LoaderRing.forEachIndexed { index, (gx, gy) ->
-            // How far this dot is behind the moving highlight (wraps around 0..8)
-            val distance = ((phase - index) % 8f + 8f) % 8f
-            val glow = (1f - distance / 3f).coerceIn(0f, 1f) // bright head, fading tail
-            drawCircle(
-                color = dotColor.copy(alpha = 0.18f + 0.82f * glow),
-                radius = dotRadius,
-                center = Offset(cx + gx * spacing, cy + gy * spacing),
-            )
-        }
-
-        // Centre dot breathes slowly
-        val pulse = 0.5f + 0.5f * sin(phase * (PI.toFloat() / 4f))
-        drawCircle(
-            color = dotColor.copy(alpha = 0.2f + 0.8f * pulse),
-            radius = dotRadius,
-            center = Offset(cx, cy),
+private fun DrawScope.drawBody(p: Pose) {
+    if (p.bodyAlpha > 0.002f && p.fill > 0.002f) {
+        drawRoundRect(
+            color = MintFill.copy(alpha = p.bodyAlpha * p.fill),
+            topLeft = Offset(-22f, -18f),
+            size = Size(44f, 36f),
+            cornerRadius = CornerRadius(15f),
+        )
+    }
+    if (p.bodyAlpha > 0.002f && p.fill < 0.998f) {
+        drawRoundRect(
+            color = OutlineGrey.copy(alpha = p.bodyAlpha * (1f - p.fill)),
+            topLeft = Offset(-22f, -18f),
+            size = Size(44f, 36f),
+            cornerRadius = CornerRadius(15f),
+            style = Stroke(width = 1.3f),
         )
     }
 }
 
-/** Connected: filled green blob with white eyes that drops in and bounces. */
-@Composable
-private fun ActiveRobot(animate: Boolean, modifier: Modifier = Modifier) {
-    // Starts 12 units above the ground and settles with a bouncy spring.
-    val lift = remember { Animatable(if (animate) -12f else 0f) }
-    LaunchedEffect(animate) {
-        if (animate) {
-            lift.animateTo(0f, spring(dampingRatio = 0.12f, stiffness = 160f))
+private fun DrawScope.drawFace(p: Pose) {
+    if (p.faceAlpha <= 0.002f) return
+    val eyeH = 10f * p.eyeOpen * (1f - p.happy)
+    val eyeColor = lerp(EyeGreen, Color.White, p.fill).copy(alpha = p.faceAlpha)
+    for (side in floatArrayOf(-1f, 1f)) {
+        val ex = side * 10.75f + p.eyeX
+        if (eyeH > 0.05f) {
+            drawOval(
+                color = eyeColor,
+                topLeft = Offset(ex - 3.25f, p.eyeY - eyeH / 2f),
+                size = Size(6.5f, eyeH),
+            )
+        }
+        if (p.happy > 0.002f) {
+            val arc = Path().apply {
+                moveTo(ex - 3f, p.eyeY + 1f)
+                quadraticBezierTo(ex, p.eyeY - 3.6f, ex + 3f, p.eyeY + 1f)
+            }
+            drawPath(
+                path = arc,
+                color = Color.White.copy(alpha = p.faceAlpha * p.happy),
+                style = Stroke(width = 1.5f),
+            )
         }
     }
+    val mouthRy = maxOf(p.mouthRy, 0.05f)
+    val mouthTopLeft = Offset(-p.mouthRx, p.mouthCy - mouthRy)
+    val mouthSize = Size(2f * p.mouthRx, 2f * mouthRy)
+    if (p.mouthFill > 0.002f) {
+        drawOval(
+            color = Color.White.copy(alpha = p.faceAlpha * p.mouthFill),
+            topLeft = mouthTopLeft,
+            size = mouthSize,
+        )
+    }
+    if (p.mouthFill < 0.998f) {
+        drawOval(
+            color = OutlineGrey.copy(alpha = p.faceAlpha * (1f - p.mouthFill)),
+            topLeft = mouthTopLeft,
+            size = mouthSize,
+            style = Stroke(width = 1.2f),
+        )
+    }
+}
 
-    Canvas(modifier) {
-        val k = size.minDimension / DESIGN_UNITS
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        // Negative means up. Clamp so the blob never sinks below the ground line.
-        val y = lift.value.coerceAtMost(0f)
-        val airborne = (-y / 12f).coerceIn(0f, 1f) // 0 = on the ground, 1 = highest point
+private fun DrawScope.drawLoaderDots(p: Pose, loadT: Float, dotColor: Color) {
+    if (p.dotAlpha <= 0.002f) return
+    val ph = loadT * 5f
+    for (i in LOADER_RING.indices) {
+        val (gx, gy) = LOADER_RING[i]
+        val dd = ((ph - i) % 8f + 8f) % 8f
+        val g = clamp01(1f - dd / 3f)
+        val glow = g * g * (3f - 2f * g)
+        val bob = 1.2f * sin(TWO_PI * loadT / 1.2f - i * PI_F / 4f)
+        drawCircle(
+            color = dotColor.copy(alpha = p.dotAlpha * (0.18f + 0.82f * glow)),
+            radius = 2.2f,
+            center = Offset(gx * 12.5f * p.spread, gy * 12.5f * p.spread + bob),
+        )
+    }
+    val pulse = 0.5f + 0.5f * sin(TWO_PI * loadT / 1.6f)
+    drawCircle(
+        color = dotColor.copy(alpha = p.dotAlpha * (0.2f + 0.8f * pulse)),
+        radius = 2.2f,
+        center = Offset.Zero,
+    )
+}
 
-        withTransform({
-            translate(cx, cy)
-            scale(k, k, Offset.Zero)
-        }) {
-            // Shadow shrinks and fades while the blob is in the air
-            val shadowScale = 1f - 0.35f * airborne
-            drawOval(
-                color = ShadowGreen.copy(alpha = 1f - 0.5f * airborne),
-                topLeft = Offset(-17f * shadowScale, 17.5f - 2.5f * shadowScale),
-                size = Size(34f * shadowScale, 5f * shadowScale),
-            )
-
-            // Body
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(MintGreen, MintGreenDeep),
-                    startY = -17f + y,
-                    endY = 15f + y,
-                ),
-                topLeft = Offset(-22f, -17f + y),
-                size = Size(44f, 32f),
-                cornerRadius = CornerRadius(14f),
-            )
-
-            // Eyes
-            drawOval(Color.White, topLeft = Offset(-13.5f, -9f + y), size = Size(6f, 8f))
-            drawOval(Color.White, topLeft = Offset(7.5f, -9f + y), size = Size(6f, 8f))
-        }
+private fun DrawScope.drawSparkles(p: Pose, onT: Float, dotColor: Color) {
+    if (p.sparkle <= 0.002f) return
+    SPARKLE_POINTS.forEachIndexed { i, (x, y) ->
+        val tw = 0.5f + 0.5f * sin(TWO_PI * (onT * 1.1f + i * 0.25f))
+        val s = 2.4f + 0.8f * tw
+        val c = dotColor.copy(alpha = p.sparkle * tw)
+        drawLine(c, Offset(x - s, y), Offset(x + s, y), strokeWidth = 1.2f)
+        drawLine(c, Offset(x, y - s), Offset(x, y + s), strokeWidth = 1.2f)
     }
 }

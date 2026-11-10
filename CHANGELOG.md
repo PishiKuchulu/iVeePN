@@ -1,5 +1,15 @@
 # Changelog
 
+## iVeePN 1.0.11 (versionCode 12) — expressive robot v2
+
+- The connect button's robot is now the owner's expressive v2
+  artwork: while disconnected it looks around, blinks, yawns and
+  stretches on a 9-second loop; while connecting it folds into the
+  dot loader; while connected it hops with squash and stretch,
+  smiles and sparkles. State changes now morph frame by frame
+  instead of cross-fading. The status text and session timer below
+  the button are unchanged.
+
 ## iVeePN 1.0.10 (versionCode 11) — robot connect button
 
 - The connect button artwork is now the owner-supplied robot design:
