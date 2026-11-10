@@ -1,5 +1,14 @@
 # Changelog
 
+## iVeePN 1.0.12 (versionCode 13) — accordion settings
+
+- The Settings screen is now an accordion: every section is a
+  card with a tappable header and a rotating chevron, and its body
+  expands and collapses with an animation (instantly when system
+  animations are off). Sections toggle independently, the
+  Connection section starts expanded, and the expanded state
+  survives rotation. No setting, label or behaviour changed.
+
 ## iVeePN 1.0.11 (versionCode 12) — expressive robot v2
 
 - The connect button's robot is now the owner's expressive v2
