@@ -1,5 +1,17 @@
 # Changelog
 
+## iVeePN 1.0.10 (versionCode 11) — robot connect button
+
+- The connect button artwork is now the owner-supplied robot design:
+  an outline robot with blinking green eyes while disconnected, a
+  3x3 dot loader with a rolling highlight while connecting, and a
+  filled mint blob that drops in with a spring bounce once
+  connected. The label block (status title/subtitle and the live
+  session timer), haptics, accessibility semantics and the
+  reduced-motion behaviour are unchanged; the loader dots follow
+  the theme's on-surface colour so they stay visible on the light
+  background.
+
 ## iVeePN 1.0.9 (versionCode 10) — transport options (user-requested)
 
 From a user's anti-censorship feature comparison, the items that are
