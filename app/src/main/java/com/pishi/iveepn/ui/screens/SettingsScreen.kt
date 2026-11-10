@@ -68,7 +68,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.expanded
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -845,10 +844,7 @@ private fun SettingsSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { isExpanded = !isExpanded }
-                    .semantics {
-                        role = Role.Button
-                        this.expanded = isExpanded
-                    }
+                    .semantics { role = Role.Button }
                     .padding(horizontal = Spacing.cardPadding, vertical = Spacing.md),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
